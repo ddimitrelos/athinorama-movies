@@ -371,7 +371,7 @@ async function openDetail(slug) {
     }
 
     if (m.trailer_url) {
-      document.getElementById('modal-trailer').src = m.trailer_url;
+      document.getElementById('modal-trailer').src = m.trailer_url + '?autoplay=1';
       document.getElementById('modal-trailer-wrap').style.display = 'block';
     }
 
