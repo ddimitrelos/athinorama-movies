@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Αθηνόραμα Αρχείο Ταινιών</title>
+
+  <!-- Bootstrap 5 dark -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <!-- Tom Select (nice multi-select) -->
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-dark:    #0d0d0d;
+      --bg-card:    #1a1a2e;
+      --bg-sidebar: #12121f;
+      --accent:     #e50914;
+      --accent2:    #f5c518;
+      --text-muted: #8a8aa0;
+    }
+
+    html, body { height: 100%; }
+    body {
+      background: var(--bg-dark);
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      background: #0a0a14 !important;
+      border-bottom: 2px solid var(--accent);
+    }
+    .navbar-brand {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+    .navbar-brand span { color: var(--accent); }
+    #db-stats { font-size: .8rem; color: var(--text-muted); }
+
+    /* ── Layout ── */
+    #app-wrapper { display: flex; min-height: calc(100vh - 58px); }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 280px;
+      min-width: 280px;
+      background: var(--bg-sidebar);
+      border-right: 1px solid #2a2a3e;
+      padding: 1.25rem 1rem;
+      overflow-y: auto;
+      max-height: calc(100vh - 58px);
+      position: sticky;
+      top: 58px;
+    }
+    #sidebar .section-title {
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+      margin: 1.2rem 0 .5rem;
+    }
+    #sidebar .form-label { font-size: .82rem; color: #b0b0c8; margin-bottom: .25rem; }
+    #sidebar .form-control,
+    #sidebar .form-select {
+      background: #1e1e30;
+      border: 1px solid #2e2e48;
+      color: #ddd;
+      font-size: .83rem;
+    }
+    #sidebar .form-control:focus,
+    #sidebar .form-select:focus {
+      background: #1e1e30;
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 0 .15rem rgba(229,9,20,.25);
+    }
+
+    /* Tom Select overrides for dark */
+    .ts-wrapper .ts-control {
+      background: #1e1e30 !important;
+      border: 1px solid #2e2e48 !important;
+      color: #ddd !important;
+      font-size: .83rem !important;
+    }
+    .ts-wrapper.focus .ts-control { border-color: var(--accent) !important; }
+    .ts-dropdown { background: #1e1e30 !important; border-color: #2e2e48 !important; color: #ddd !important; }
+    .ts-dropdown .option:hover, .ts-dropdown .option.active { background: #2a2a48 !important; }
+    .ts-wrapper .ts-control .item {
+      background: #2e2e50 !important;
+      color: #e0e0ff !important;
+      border: none !important;
+    }
+
+    /* Rating range */
+    .rating-range-row { display: flex; gap: .5rem; align-items: center; }
+    .rating-range-row input { width: 60px; text-align: center; }
+
+    /* Reset btn */
+    #btn-reset {
+      font-size: .78rem;
+      color: var(--text-muted);
+      border-color: #2e2e48;
+      background: transparent;
+      width: 100%;
+      margin-top: 1rem;
+    }
+    #btn-reset:hover { color: #fff; border-color: #555; }
+
+    /* ── Main content ── */
+    #main-content {
+      flex: 1;
+      padding: 1.25rem 1.5rem;
+      overflow-y: auto;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    #result-count { color: var(--text-muted); font-size: .85rem; }
+    .sort-select {
+      background: #1e1e30;
+      border: 1px solid #2e2e48;
+      color: #ccc;
+      font-size: .82rem;
+      padding: .25rem .6rem;
+      border-radius: .35rem;
+      cursor: pointer;
+    }
+    .sort-select:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Movie Grid ── */
+    #movie-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 1.1rem;
+    }
+
+    /* ── Movie Card ── */
+    .movie-card {
+      background: var(--bg-card);
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform .18s, box-shadow .18s;
+      border: 1px solid #20203a;
+      display: flex;
+      flex-direction: column;
+    }
+    .movie-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(0,0,0,.6);
+      border-color: #3a3a5c;
+    }
+    .movie-card .poster-wrap {
+      position: relative;
+      width: 100%;
+      padding-top: 143%;  /* 100×143 aspect ratio */
+      background: #111124;
+    }
+    .movie-card .poster-wrap img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .movie-card .poster-wrap .no-poster {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #3a3a5c;
+      font-size: 2.5rem;
+    }
+    .movie-card .card-body {
+      padding: .6rem .7rem .7rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: .2rem;
+    }
+    .movie-card .title-gr {
+      font-size: .82rem;
+      font-weight: 600;
+      color: #e8e8f0;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .movie-card .title-orig {
+      font-size: .72rem;
+      color: var(--text-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .movie-card .meta {
+      font-size: .72rem;
+      color: #7a7a98;
+      margin-top: auto;
+    }
+    .movie-card .stars { color: var(--accent2); font-size: .82rem; letter-spacing: .5px; }
+    .movie-card .stars .rating-num { font-size: .72rem; color: #aaa; margin-left: 2px; }
+    .movie-card .badge-genre {
+      font-size: .65rem;
+      background: #1e1e3a;
+      color: #9090b8;
+      border-radius: 4px;
+      padding: 1px 5px;
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Empty / Loading states ── */
+    #empty-state, #loading-state {
+      text-align: center;
+      padding: 4rem 1rem;
+      color: var(--text-muted);
+    }
+    #empty-state i, #loading-state i { font-size: 3rem; display: block; margin-bottom: 1rem; }
+
+    /* ── Pagination ── */
+    .pagination .page-link {
+      background: #1a1a2e;
+      border-color: #2e2e48;
+      color: #ccc;
+      font-size: .82rem;
+    }
+    .pagination .page-link:hover { background: #2a2a48; color: #fff; }
+    .pagination .page-item.active .page-link {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .pagination .page-item.disabled .page-link { opacity: .35; }
+
+    /* ── Modal ── */
+    .modal-content {
+      background: #12121f;
+      border: 1px solid #2a2a3e;
+      color: #e0e0e0;
+    }
+    .modal-header { border-bottom: 1px solid #2a2a3e; }
+    .modal-footer { border-top: 1px solid #2a2a3e; }
+    #modal-poster {
+      width: 140px;
+      min-width: 140px;
+      border-radius: 6px;
+      object-fit: cover;
+    }
+    #modal-poster-placeholder {
+      width: 140px;
+      min-width: 140px;
+      height: 200px;
+      background: #1e1e30;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #3a3a5c;
+      font-size: 3rem;
+    }
+    .modal-stars { color: var(--accent2); font-size: 1.2rem; letter-spacing: 2px; }
+    .detail-row { font-size: .85rem; margin-bottom: .4rem; }
+    .detail-label { color: var(--text-muted); width: 100px; display: inline-block; }
+    .synopsis-text { font-size: .85rem; line-height: 1.6; color: #c0c0d8; }
+
+    /* ── Scrape modal ── */
+    #scrape-modal .modal-content { background: #0d0d1a; }
+    .progress { background: #1e1e30; height: 8px; border-radius: 4px; }
+    .progress-bar { background: var(--accent); }
+    #scrape-phase { font-weight: 600; font-size: .9rem; }
+    #scrape-msg { font-size: .78rem; color: var(--text-muted); word-break: break-all; }
+
+    /* ── Scrape button ── */
+    #btn-scrape {
+      background: var(--accent);
+      border: none;
+      font-size: .82rem;
+      padding: .3rem .8rem;
+    }
+    #btn-scrape:hover { background: #c0070f; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0a0a14; }
+    ::-webkit-scrollbar-thumb { background: #2e2e50; border-radius: 3px; }
+
+    @media (max-width: 768px) {
+      #app-wrapper { flex-direction: column; }
+      #sidebar {
+        width: 100%;
+        min-width: unset;
+        max-height: unset;
+        position: static;
+        border-right: none;
+        border-bottom: 1px solid #2a2a3e;
+      }
+      #movie-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    }
+  </style>
+</head>
+<body data-bs-theme="dark">
+
+<!-- ═══════════════ NAVBAR ═══════════════ -->
+<nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+  <div class="container-fluid px-3">
+    <span class="navbar-brand">
+      <i class="bi bi-film me-2" style="color:var(--accent)"></i>
+      Αθηνόραμα <span>Αρχείο</span>
+    </span>
+    <div class="d-flex align-items-center gap-3 ms-auto">
+      <span id="db-stats">Φόρτωση βάσης…</span>
+      {% if not cloud_mode %}
+      <button class="btn btn-sm" id="btn-scrape" data-bs-toggle="modal" data-bs-target="#scrapeModal">
+        <i class="bi bi-cloud-download me-1"></i>Scrape
+      </button>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════ MAIN WRAPPER ═══════════════ -->
+<div id="app-wrapper">
+
+  <!-- ── SIDEBAR ── -->
+  <aside id="sidebar">
+
+    <div class="section-title"><i class="bi bi-search me-1"></i>Αναζήτηση</div>
+    <input type="text" id="f-title" class="form-control" placeholder="Τίτλος, σκηνοθέτης…" autocomplete="off">
+
+    <div class="section-title"><i class="bi bi-calendar3 me-1"></i>Έτος</div>
+    <div class="d-flex gap-2">
+      <input type="number" id="f-year-from" class="form-control" placeholder="Από" min="1900" max="2030">
+      <input type="number" id="f-year-to"   class="form-control" placeholder="Έως" min="1900" max="2030">
+    </div>
+
+    <div class="section-title"><i class="bi bi-star me-1"></i>Αστεράκια Αθηνόραμα</div>
+    <div class="rating-range-row">
+      <input type="number" id="f-rating-min" class="form-control" placeholder="Min" min="0" max="5" step="0.5">
+      <span style="color:var(--text-muted)">–</span>
+      <input type="number" id="f-rating-max" class="form-control" placeholder="Max" min="0" max="5" step="0.5">
+    </div>
+
+    <div class="section-title"><i class="bi bi-globe2 me-1"></i>Χώρα</div>
+    <select id="f-country" multiple placeholder="Επιλογή χώρας…"></select>
+
+    <div class="section-title"><i class="bi bi-tag me-1"></i>Είδος</div>
+    <select id="f-genre" multiple placeholder="Επιλογή είδους…"></select>
+
+    <div class="section-title"><i class="bi bi-clock me-1"></i>Διάρκεια (λεπτά)</div>
+    <div class="d-flex gap-2">
+      <input type="number" id="f-dur-min" class="form-control" placeholder="Min" min="0">
+      <input type="number" id="f-dur-max" class="form-control" placeholder="Max" min="0">
+    </div>
+
+    <button class="btn btn-outline-secondary" id="btn-reset">
+      <i class="bi bi-x-circle me-1"></i>Καθαρισμός φίλτρων
+    </button>
+
+  </aside>
+
+  <!-- ── MAIN CONTENT ── -->
+  <main id="main-content">
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <span id="result-count"></span>
+      <div class="ms-auto d-flex align-items-center gap-2">
+        <label class="form-label mb-0" style="font-size:.82rem;color:var(--text-muted)">Ταξινόμηση:</label>
+        <select class="sort-select" id="sort-by">
+          <option value="year">Έτος</option>
+          <option value="rating">Αστεράκια</option>
+          <option value="title">Τίτλος</option>
+          <option value="duration">Διάρκεια</option>
+        </select>
+        <select class="sort-select" id="sort-dir">
+          <option value="desc">↓</option>
+          <option value="asc">↑</option>
+        </select>
+        <select class="sort-select" id="per-page">
+          <option value="24">24</option>
+          <option value="48">48</option>
+          <option value="96">96</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Movie grid -->
+    <div id="loading-state" style="display:none">
+      <i class="bi bi-hourglass-split"></i>
+      <p>Φόρτωση…</p>
+    </div>
+    <div id="empty-state" style="display:none">
+      <i class="bi bi-film"></i>
+      <h5 id="empty-title">Δεν βρέθηκαν ταινίες</h5>
+      <p id="empty-subtitle">Δοκιμάστε άλλα φίλτρα ή εκτελέστε scrape για να φορτώσετε δεδομένα.</p>
+    </div>
+    <div id="movie-grid"></div>
+
+    <!-- Pagination -->
+    <nav class="mt-4" id="pagination-wrap">
+      <ul class="pagination justify-content-center flex-wrap" id="pagination"></ul>
+    </nav>
+
+  </main>
+</div><!-- end app-wrapper -->
+
+
+<!-- ═══════════════ MOVIE DETAIL MODAL ═══════════════ -->
+<div class="modal fade" id="movieModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0" id="modal-title-gr"></h5>
+          <div class="text-muted" id="modal-title-orig" style="font-size:.85rem"></div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-3">
+          <div>
+            <img id="modal-poster" src="" alt="poster" style="display:none">
+            <div id="modal-poster-placeholder"><i class="bi bi-film"></i></div>
+          </div>
+          <div class="flex-grow-1">
+            <div class="modal-stars mb-2" id="modal-stars"></div>
+            <div class="detail-row"><span class="detail-label">Έτος</span><span id="modal-year"></span></div>
+            <div class="detail-row"><span class="detail-label">Χώρα</span><span id="modal-country"></span></div>
+            <div class="detail-row"><span class="detail-label">Είδος</span><span id="modal-genre"></span></div>
+            <div class="detail-row"><span class="detail-label">Σκηνοθεσία</span><span id="modal-director"></span></div>
+            <div class="detail-row"><span class="detail-label">Διάρκεια</span><span id="modal-duration"></span></div>
+            <div class="detail-row" id="modal-cast-row">
+              <span class="detail-label">Ηθοποιοί</span><span id="modal-cast"></span>
+            </div>
+          </div>
+        </div>
+        <hr style="border-color:#2a2a3e;margin:1rem 0">
+        <p class="synopsis-text" id="modal-synopsis"></p>
+      </div>
+      <div class="modal-footer">
+        <a id="modal-link" href="#" target="_blank" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-box-arrow-up-right me-1"></i>Athinorama
+        </a>
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Κλείσιμο</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════ SCRAPE MODAL ═══════════════ -->
+<div class="modal fade" id="scrapeModal" tabindex="-1" id="scrape-modal">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-cloud-download me-2"></i>Εξαγωγή Δεδομένων</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Status when not running -->
+        <div id="scrape-idle">
+          <p class="mb-1" style="font-size:.88rem">
+            Η εξαγωγή θα σαρώσει όλο το αρχείο ταινιών Αθηνόραμα (1916–σήμερα).<br>
+            <strong>Η αρχική εξαγωγή μπορεί να διαρκέσει αρκετές ώρες.</strong>
+          </p>
+          <p style="font-size:.78rem;color:var(--text-muted)">
+            Εκτελείται αυτόματα κάθε εβδομάδα για νέες ταινίες.
+          </p>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="chk-full-rescrape">
+            <label class="form-check-label" style="font-size:.83rem" for="chk-full-rescrape">
+              Πλήρης επανεξαγωγή (ενημέρωση ήδη αποθηκευμένων ταινιών)
+            </label>
+          </div>
+          <button class="btn btn-danger w-100" id="btn-start-scrape">
+            <i class="bi bi-play-fill me-1"></i>Έναρξη Εξαγωγής
+          </button>
+          <button class="btn btn-outline-warning w-100 mt-2" id="btn-update-ratings">
+            <i class="bi bi-star-half me-1"></i>Ενημέρωση Αξιολογήσεων (γρήγορο)
+          </button>
+        </div>
+
+        <!-- Status when running -->
+        <div id="scrape-running" style="display:none">
+          <div id="scrape-phase" class="mb-1">—</div>
+          <div id="scrape-msg" class="mb-2">—</div>
+          <div class="progress mb-2">
+            <div class="progress-bar progress-bar-striped progress-bar-animated"
+                 id="scrape-bar" role="progressbar" style="width:0%"></div>
+          </div>
+          <div class="d-flex justify-content-between" style="font-size:.75rem;color:var(--text-muted)">
+            <span id="scrape-counter">0 / 0</span>
+            <span id="scrape-counts"></span>
+          </div>
+          <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-sm btn-outline-warning flex-fill" id="btn-pause-scrape">
+              <i class="bi bi-pause-fill me-1"></i>Παύση
+            </button>
+            <button class="btn btn-sm btn-outline-danger flex-fill" id="btn-stop-scrape">
+              <i class="bi bi-stop-fill me-1"></i>Διακοπή
+            </button>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div id="scrape-error" style="display:none" class="alert alert-danger mt-2 mb-0 p-2" style="font-size:.82rem"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

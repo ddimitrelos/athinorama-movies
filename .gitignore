@@ -1,0 +1,29 @@
+# Portable Python runtime (~150MB - never commit)
+python/
+
+# SQLite WAL sidecar files (always checkpoint before committing movies.db)
+*.db-shm
+*.db-wal
+
+# Local-only scripts
+run.bat
+run_server.ps1
+start_app.ps1
+setup.bat
+bootstrap_python.ps1
+install_browser.ps1
+install_python.ps1
+install_python2.ps1
+
+# Logs
+flask.log
+flask_err.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Misc
+null
+.env
