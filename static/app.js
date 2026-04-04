@@ -200,8 +200,8 @@ async function loadFilters() {
       placeholder: 'Επιλογή είδους…',
     });
 
-    tsCountry.on('change', () => { state.page = 1; debounce(loadMovies, 100); });
-    tsGenre.on('change',   () => { state.page = 1; debounce(loadMovies, 100); });
+    tsCountry.on('change', onFilterChange);
+    tsGenre.on('change',   onFilterChange);
 
     // Stats
     const s = data.stats || {};
