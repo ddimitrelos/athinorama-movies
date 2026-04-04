@@ -233,14 +233,20 @@ def _scrape_detail_fast(slug):
 
         # Override rating with the displayed HTML rating — JSON-LD ratingValue can
         # be stale/incorrect while the page shows a different aggregated value.
+        # Always set rating explicitly (even as None) so upsert_movie can clear
+        # a wrong Phase-1 rating for movies that have no review on Athinorama.
         rating_el = soup.select_one('span.rating-value')
         if rating_el:
             try:
                 r_val = float(rating_el.get_text(strip=True).replace(',', '.'))
                 if 0 < r_val <= 5:
                     movie_data['rating'] = r_val
+                else:
+                    movie_data['rating'] = None
             except (ValueError, TypeError):
-                pass
+                movie_data['rating'] = None
+        else:
+            movie_data['rating'] = None
 
         # Trailer — grab the first YouTube embed iframe if present
         trailer_el = soup.find('iframe', src=lambda s: s and 'youtube.com/embed' in s)

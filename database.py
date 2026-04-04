@@ -64,7 +64,13 @@ def init_db():
 
 def upsert_movie(movie_data):
     """Insert or update a movie. Returns 'inserted' or 'updated'."""
+    # Keep explicit None for 'rating' when detail page was successfully scraped,
+    # so a wrong Phase-1 rating (e.g. 5.0 from star-counting) gets cleared.
+    # All other None fields are dropped to avoid overwriting good data.
+    rating_is_explicit_null = 'rating' in movie_data and movie_data['rating'] is None and movie_data.get('detail_scraped')
     movie_data = {k: v for k, v in movie_data.items() if v is not None}
+    if rating_is_explicit_null:
+        movie_data['rating'] = None
     movie_data['last_updated'] = datetime.now().isoformat()
 
     with get_db() as conn:
