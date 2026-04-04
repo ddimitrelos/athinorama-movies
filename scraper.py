@@ -231,6 +231,22 @@ def _scrape_detail_fast(slug):
         if og_img and og_img.get('content'):
             movie_data['poster_url'] = og_img['content']
 
+        # Override rating with the displayed HTML rating — JSON-LD ratingValue can
+        # be stale/incorrect while the page shows a different aggregated value.
+        rating_el = soup.select_one('span.rating-value')
+        if rating_el:
+            try:
+                r_val = float(rating_el.get_text(strip=True).replace(',', '.'))
+                if 0 < r_val <= 5:
+                    movie_data['rating'] = r_val
+            except (ValueError, TypeError):
+                pass
+
+        # Trailer — grab the first YouTube embed iframe if present
+        trailer_el = soup.find('iframe', src=lambda s: s and 'youtube.com/embed' in s)
+        if trailer_el:
+            movie_data['trailer_url'] = trailer_el['src'].split('?')[0]
+
         # HTML fallbacks for fields missing from JSON-LD
         if not movie_data.get('synopsis'):
             el = soup.select_one('div.summary p')

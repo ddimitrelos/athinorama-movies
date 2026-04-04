@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS movies (
     poster_url      TEXT,
     athinorama_url  TEXT,
     detail_scraped  INTEGER DEFAULT 0,
+    trailer_url     TEXT,
     last_updated    TEXT
 );
 
@@ -54,6 +55,10 @@ def get_db():
 def init_db():
     with get_db() as conn:
         conn.executescript(SCHEMA)
+        # Migrate: add columns that may be missing from older databases
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(movies)").fetchall()}
+        if 'trailer_url' not in cols:
+            conn.execute("ALTER TABLE movies ADD COLUMN trailer_url TEXT")
         conn.commit()
 
 

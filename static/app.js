@@ -319,12 +319,20 @@ function escHtml(str) {
 // Movie detail modal
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Stop trailer playback when modal closes
+document.getElementById('movieModal').addEventListener('hidden.bs.modal', () => {
+  document.getElementById('modal-trailer').src = '';
+  document.getElementById('modal-trailer-wrap').style.display = 'none';
+});
+
 async function openDetail(slug) {
   // Reset modal
   document.getElementById('modal-poster').style.display = 'none';
   document.getElementById('modal-poster-placeholder').style.display = 'flex';
   document.getElementById('modal-synopsis').textContent = '';
   document.getElementById('modal-cast-row').style.display = 'none';
+  document.getElementById('modal-trailer-wrap').style.display = 'none';
+  document.getElementById('modal-trailer').src = '';
 
   movieModal.show();
 
@@ -360,6 +368,11 @@ async function openDetail(slug) {
 
     if (m.athinorama_url) {
       document.getElementById('modal-link').href = m.athinorama_url;
+    }
+
+    if (m.trailer_url) {
+      document.getElementById('modal-trailer').src = m.trailer_url;
+      document.getElementById('modal-trailer-wrap').style.display = 'block';
     }
 
   } catch (e) {
