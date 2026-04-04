@@ -201,6 +201,27 @@ if not CLOUD_MODE:
 
 
 # ---------------------------------------------------------------------------
+# Temporary one-time rating fix endpoint — REMOVE AFTER USE
+# ---------------------------------------------------------------------------
+@app.route('/api/admin/fix-rating', methods=['POST'])
+def api_fix_rating():
+    import secrets
+    token = request.json.get('token', '') if request.json else ''
+    expected = os.environ.get('ADMIN_TOKEN', '')
+    if not expected or not secrets.compare_digest(token, expected):
+        return jsonify({'error': 'Forbidden'}), 403
+    slug = request.json.get('slug', '')
+    rating = request.json.get('rating')
+    if not slug or rating is None:
+        return jsonify({'error': 'slug and rating required'}), 400
+    with database.get_db() as conn:
+        conn.execute("UPDATE movies SET rating = ? WHERE slug = ?", (float(rating), slug))
+        conn.commit()
+        row = conn.execute("SELECT slug, rating FROM movies WHERE slug = ?", (slug,)).fetchone()
+    return jsonify(dict(row) if row else {'error': 'not found'})
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == '__main__':
