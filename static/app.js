@@ -61,7 +61,12 @@ function starsText(rating) {
 function posterSrc(url) {
   if (!url) return null;
   // Upgrade low-res archive thumbnails to decent size
-  return url.replace('/100x143/', '/300x409/');
+  url = url.replace('/100x143/', '/300x409/');
+  // Append resize params for Content/ImagesDatabase URLs
+  if (url.includes('/Content/ImagesDatabase/') && !url.includes('?')) {
+    url += '?w=250&h=375&mode=pad&bgcolor=191919';
+  }
+  return url;
 }
 
 function formatDuration(mins) {
@@ -479,6 +484,13 @@ async function checkScrapeOnLoad() {
     if (data.running) {
       showScrapeRunning();
       startScrapePoller();
+    }
+    // Show next scheduled scrape time
+    const infoEl = document.getElementById('schedule-info');
+    if (infoEl) {
+      if (data.next_scheduled) {
+        infoEl.textContent = `Επόμενη αυτόματη ενημέρωση: ${data.next_scheduled}`;
+      }
     }
   } catch (_) {}
 }

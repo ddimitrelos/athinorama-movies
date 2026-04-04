@@ -1,6 +1,17 @@
 import sqlite3
 import os
+import unicodedata
 from datetime import datetime
+
+
+def _normalize(text):
+    """Lowercase + strip Greek (and all) accent marks for accent-insensitive search."""
+    if not text:
+        return ''
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', str(text).lower())
+        if unicodedata.category(c) != 'Mn'
+    )
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'movies.db')
 
@@ -36,6 +47,7 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.create_function('norm', 1, _normalize)
     return conn
 
 
@@ -94,8 +106,8 @@ def get_movies(filters=None, page=1, per_page=24, sort_by='year', sort_dir='desc
 
     if filters:
         if filters.get('title'):
-            where_clauses.append("(title_gr LIKE ? OR title_orig LIKE ? OR director LIKE ?)")
-            t = f"%{filters['title']}%"
+            where_clauses.append("(norm(title_gr) LIKE ? OR norm(title_orig) LIKE ? OR norm(director) LIKE ?)")
+            t = f"%{_normalize(filters['title'])}%"
             params.extend([t, t, t])
 
         if filters.get('year_from'):
@@ -131,8 +143,8 @@ def get_movies(filters=None, page=1, per_page=24, sort_by='year', sort_dir='desc
             params.append(float(filters['rating_max']))
 
         if filters.get('director'):
-            where_clauses.append("director LIKE ?")
-            params.append(f"%{filters['director']}%")
+            where_clauses.append("norm(director) LIKE ?")
+            params.append(f"%{_normalize(filters['director'])}%")
 
         if filters.get('duration_min'):
             where_clauses.append("duration >= ?")

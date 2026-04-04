@@ -9,9 +9,24 @@ import time
 import json
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
+import requests
+from bs4 import BeautifulSoup
+
 import database
+
+HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/120.0.0.0 Safari/537.36'
+    ),
+    'Accept-Language': 'el-GR,el;q=0.9',
+}
+SESSION = requests.Session()
+SESSION.headers.update(HEADERS)
 
 # Hardcode the Playwright browsers path so it works regardless of how
 # the Flask process is launched (hidden window, service, etc.)
@@ -76,14 +91,16 @@ def _parse_json_ld(data, slug):
     if title_orig == title_gr:
         title_orig = ''
 
-    # Year
+    # Year (skip invalid dates like "0001-01-01")
     year = None
     for field in ('dateCreated', 'datePublished', 'copyrightYear'):
         val = data.get(field)
         if val:
             try:
-                year = int(str(val)[:4])
-                break
+                y = int(str(val)[:4])
+                if y >= 1880:   # Athinorama archive starts ~1916
+                    year = y
+                    break
             except (ValueError, TypeError):
                 pass
 
@@ -96,8 +113,8 @@ def _parse_json_ld(data, slug):
     else:
         country = _extract_str(cd)
 
-    # Director
-    dd = data.get('director', [])
+    # Director (Athinorama JSON-LD uses 'directors' plural)
+    dd = data.get('directors') or data.get('director') or []
     if isinstance(dd, list):
         director = ', '.join(d.get('name', '') for d in dd if isinstance(d, dict) and d.get('name'))
     elif isinstance(dd, dict):
@@ -105,8 +122,8 @@ def _parse_json_ld(data, slug):
     else:
         director = _extract_str(dd)
 
-    # Cast (limit to 20 actors)
-    ad = data.get('actor', [])
+    # Cast (Athinorama JSON-LD uses 'actors' plural, limit to 20)
+    ad = data.get('actors') or data.get('actor') or []
     if isinstance(ad, list):
         cast = ', '.join(a.get('name', '') for a in ad[:20] if isinstance(a, dict) and a.get('name'))
     else:
@@ -121,22 +138,25 @@ def _parse_json_ld(data, slug):
         genre = ', '.join(genre)
     genre = genre.strip()
 
-    # Rating
+    # Rating — Athinorama puts it inside review.reviewRating, not at top level
     rating = None
-    rr = data.get('reviewRating', {})
-    if isinstance(rr, dict):
-        try:
-            rv = rr.get('ratingValue')
-            if rv is not None:
-                rating = float(rv) or None
-        except (ValueError, TypeError):
-            pass
-
-    # Synopsis
     review = data.get('review', {})
-    synopsis = ''
     if isinstance(review, list) and review:
         review = review[0]
+    if isinstance(review, dict):
+        rr = review.get('reviewRating', {})
+        if isinstance(rr, dict):
+            try:
+                rv = rr.get('ratingValue')
+                if rv is not None:
+                    r_val = float(str(rv).replace(',', '.'))
+                    if r_val > 0:
+                        rating = r_val
+            except (ValueError, TypeError):
+                pass
+
+    # Synopsis — from review.text in JSON-LD
+    synopsis = ''
     if isinstance(review, dict):
         synopsis = review.get('reviewBody') or review.get('text') or ''
 
@@ -162,6 +182,73 @@ def _parse_json_ld(data, slug):
         'athinorama_url': f"{BASE_URL}/cinema/movie/{slug}/",
         'detail_scraped': 1,
     }
+
+
+# ---------------------------------------------------------------------------
+# Fast requests-based detail scraper (no browser needed for detail pages)
+# ---------------------------------------------------------------------------
+
+def _scrape_detail_fast(slug):
+    """
+    Fetch a movie detail page with requests + BeautifulSoup.
+    ~10x faster than Playwright for pages that don't need JS execution.
+    Returns a movie_data dict or None on failure.
+    """
+    url = f"{BASE_URL}/cinema/movie/{slug}/"
+    try:
+        resp = SESSION.get(url, timeout=15)
+        if resp.status_code != 200:
+            return None
+        soup = BeautifulSoup(resp.content, 'html.parser')
+
+        # Extract JSON-LD
+        json_ld = None
+        for tag in soup.find_all('script', type='application/ld+json'):
+            try:
+                d = json.loads(tag.string or '')
+                if isinstance(d, list):
+                    d = next((x for x in d if x.get('@type') == 'Movie'), None)
+                if d and d.get('@type') == 'Movie':
+                    json_ld = d
+                    break
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+        if json_ld:
+            movie_data = _parse_json_ld(json_ld, slug)
+        else:
+            # Minimal fallback from HTML
+            h1 = soup.find('h1')
+            movie_data = {
+                'slug': slug,
+                'title_gr': h1.get_text(strip=True) if h1 else slug,
+                'athinorama_url': url,
+                'detail_scraped': 0,
+            }
+
+        # Always prefer og:image — the JSON-LD image path (/lmnts/...) returns 502
+        og_img = soup.find('meta', property='og:image')
+        if og_img and og_img.get('content'):
+            movie_data['poster_url'] = og_img['content']
+
+        # HTML fallbacks for fields missing from JSON-LD
+        if not movie_data.get('synopsis'):
+            el = soup.select_one('div.summary p')
+            if el:
+                movie_data['synopsis'] = el.get_text(strip=True)
+
+        if not movie_data.get('duration'):
+            el = soup.select_one('span.duration')
+            if el:
+                m = re.search(r'(\d+)', el.get_text())
+                if m:
+                    movie_data['duration'] = int(m.group(1))
+
+        return movie_data
+
+    except Exception as exc:
+        logger.warning(f"Fast scrape failed for {slug}: {exc}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +319,7 @@ def _get_slugs_from_page(page):
                         const d = ratingEl.getAttribute('data-rating') ||
                                   ratingEl.getAttribute('data-value') ||
                                   ratingEl.getAttribute('data-score');
-                        if (d) { rating = parseFloat(d); break; }
+                        if (d) { rating = parseFloat(d.replace(',', '.')); break; }
                         // Count filled star icons
                         const filled = ratingEl.querySelectorAll(
                             '.bi-star-fill, [class*="star-fill"], [class*="full"], [class*="filled"]'
@@ -240,7 +327,7 @@ def _get_slugs_from_page(page):
                         if (filled > 0) { rating = filled; break; }
                         // Try text content as number
                         const txt = ratingEl.textContent.trim();
-                        const num = parseFloat(txt);
+                        const num = parseFloat(txt.replace(',', '.'));
                         if (!isNaN(num) && num >= 0.5 && num <= 5) { rating = num; break; }
                         // Count star characters
                         const stars = (txt.match(/★/g) || []).length;
@@ -377,47 +464,37 @@ def run_scrape(full_rescrape=False):
                 'current': 0,
             })
 
-            for i, slug in enumerate(todo_slugs):
+            # Phase 2 uses requests + thread pool (no browser needed)
+            browser.close()
+
+            WORKERS = 8
+
+            def _scrape_one(slug):
+                """Worker: scrape one detail page and save to DB."""
                 _pause_event.wait()
                 if not progress['running']:
-                    break
-
-                progress['current'] = i + 1
-                progress['message'] = slug
-
-                try:
-                    url = f"{BASE_URL}/cinema/movie/{slug}/"
-                    page.goto(url, wait_until='domcontentloaded')
-
-                    json_ld = _get_json_ld(page)
-
-                    if json_ld:
-                        movie_data = _parse_json_ld(json_ld, slug)
-                    else:
-                        # Minimal fallback
-                        h1 = page.locator('h1').first
-                        title = h1.text_content(timeout=3000).strip() if h1 else slug
-                        movie_data = {
-                            'slug':           slug,
-                            'title_gr':       title,
-                            'athinorama_url': url,
-                            'detail_scraped': 0,
-                        }
-
+                    return
+                movie_data = _scrape_detail_fast(slug)
+                if movie_data:
                     result = database.upsert_movie(movie_data)
                     if result == 'inserted':
                         progress['new_count'] += 1
                     elif result == 'updated':
                         progress['updated_count'] += 1
 
-                except PWTimeout:
-                    logger.warning(f"Timeout on movie {slug}")
-                except Exception as exc:
-                    logger.error(f"Error scraping {slug}: {exc}")
-
-                time.sleep(0.35)
-
-            browser.close()
+            with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+                futures = {executor.submit(_scrape_one, slug): slug for slug in todo_slugs}
+                for i, future in enumerate(as_completed(futures)):
+                    _pause_event.wait()
+                    if not progress['running']:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        break
+                    progress['current'] = i + 1
+                    progress['message'] = futures[future]
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        logger.error(f"Worker error for {futures[future]}: {exc}")
 
         progress['phase']   = 'Ολοκληρώθηκε'
         progress['message'] = (

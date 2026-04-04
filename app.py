@@ -33,15 +33,54 @@ logger = logging.getLogger(__name__)
 # Weekly scheduler (local only)
 # ---------------------------------------------------------------------------
 if not CLOUD_MODE:
-    scheduler = BackgroundScheduler(daemon=True)
+    import json
+    from datetime import datetime, timedelta
+
+    SCHEDULE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.scrape_schedule.json')
+
+    def _load_schedule():
+        try:
+            with open(SCHEDULE_FILE) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_schedule(data):
+        try:
+            with open(SCHEDULE_FILE, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            logger.warning(f"Could not save schedule: {e}")
 
     def _scheduled_scrape():
-        if not scraper.progress['running']:
-            logger.info("Weekly scheduled scrape starting...")
-            threading.Thread(target=scraper.run_scrape, daemon=True).start()
+        if scraper.progress['running']:
+            return
+        logger.info("Weekly scheduled scrape starting...")
+        _save_schedule({'last_run': datetime.now().isoformat()})
+        threading.Thread(target=scraper.run_scrape, daemon=True).start()
 
-    scheduler.add_job(_scheduled_scrape, 'interval', weeks=1, id='weekly_scrape')
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(_scheduled_scrape, 'interval', weeks=1, id='weekly_scrape',
+                      next_run_time=datetime.now() + timedelta(weeks=1))
     scheduler.start()
+
+    # On startup: if more than 7 days since last scrape, run immediately
+    schedule_data = _load_schedule()
+    last_run_str = schedule_data.get('last_run')
+    if last_run_str:
+        last_run = datetime.fromisoformat(last_run_str)
+        days_since = (datetime.now() - last_run).days
+        if days_since >= 7:
+            logger.info(f"Last scrape was {days_since} days ago — running now.")
+            threading.Thread(target=_scheduled_scrape, daemon=True).start()
+        else:
+            next_run = last_run + timedelta(weeks=1)
+            # Adjust next_run_time to the correct date (not just 1 week from now)
+            next_run_time = next_run if next_run > datetime.now() else datetime.now() + timedelta(seconds=5)
+            scheduler.modify_job('weekly_scrape', next_run_time=next_run_time)
+            logger.info(f"Next scheduled scrape: {next_run.strftime('%Y-%m-%d %H:%M')}")
+    else:
+        logger.info("No previous scrape recorded — weekly auto-scrape will run in 7 days.")
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +182,22 @@ if not CLOUD_MODE:
 
     @app.route('/api/scrape/status')
     def api_scrape_status():
-        return jsonify(scraper.progress)
+        status = dict(scraper.progress)
+        # Attach next scheduled run time
+        try:
+            job = scheduler.get_job('weekly_scrape')
+            if job and job.next_run_time:
+                # next_run_time may be timezone-aware; convert to naive local time
+                nrt = job.next_run_time
+                if hasattr(nrt, 'astimezone'):
+                    nrt = nrt.astimezone(tz=None).replace(tzinfo=None)
+                status['next_scheduled'] = nrt.strftime('%d/%m/%Y %H:%M')
+        except Exception as e:
+            logger.warning(f"Could not get next run time: {e}")
+        schedule_data = _load_schedule()
+        if schedule_data.get('last_run'):
+            status['last_auto_scrape'] = schedule_data['last_run']
+        return jsonify(status)
 
 
 # ---------------------------------------------------------------------------
