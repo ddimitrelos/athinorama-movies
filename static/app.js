@@ -252,7 +252,7 @@ function renderGrid(movies) {
         ${m.title_orig ? `<div class="title-orig">${escHtml(m.title_orig)}</div>` : ''}
         <div class="stars mt-1">${starsHtml(m.rating, true)}</div>
         <div class="meta mt-1">
-          ${m.year ? `<span>${m.year}</span>` : ''}
+          ${m.year && m.year >= 1880 ? `<span>${m.year}</span>` : ''}
           ${country ? `<span class="ms-1">· ${escHtml(country)}</span>` : ''}
           ${m.duration ? `<span class="ms-1">· ${formatDuration(m.duration)}</span>` : ''}
         </div>

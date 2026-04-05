@@ -91,7 +91,7 @@ def _parse_json_ld(data, slug):
     if title_orig == title_gr:
         title_orig = ''
 
-    # Year (skip invalid dates like "0001-01-01")
+    # Year (skip invalid dates like "0001-01-01" which is a .NET default)
     year = None
     for field in ('dateCreated', 'datePublished', 'copyrightYear'):
         val = data.get(field)
@@ -103,6 +103,8 @@ def _parse_json_ld(data, slug):
                     break
             except (ValueError, TypeError):
                 pass
+    # Treat year=None as explicit so upsert_movie can clear stale values like 1
+    # (marker picked up by upsert_movie the same way rating=None is handled)
 
     # Country
     cd = data.get('countryOfOrigin')
