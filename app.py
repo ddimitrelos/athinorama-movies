@@ -122,6 +122,27 @@ def api_movies():
     return jsonify(result)
 
 
+@app.route('/api/movies/random')
+def api_random_movie():
+    filters = {
+        'title':        request.args.get('title', '').strip() or None,
+        'year_from':    request.args.get('year_from') or None,
+        'year_to':      request.args.get('year_to') or None,
+        'countries':    request.args.getlist('country') or None,
+        'genres':       request.args.getlist('genre') or None,
+        'rating_min':   request.args.get('rating_min') or None,
+        'rating_max':   request.args.get('rating_max') or None,
+        'director':     request.args.get('director', '').strip() or None,
+        'duration_min': request.args.get('duration_min') or None,
+        'duration_max': request.args.get('duration_max') or None,
+    }
+    filters = {k: v for k, v in filters.items() if v is not None}
+    slug = database.get_random_movie(filters)
+    if slug:
+        return jsonify({'slug': slug})
+    return jsonify({'error': 'No movies found'}), 404
+
+
 @app.route('/api/movies/<slug>')
 def api_movie_detail(slug):
     movie = database.get_movie_detail(slug)

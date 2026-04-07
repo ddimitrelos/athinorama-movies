@@ -113,7 +113,7 @@ def update_rating(slug, rating):
 
 def get_movies(filters=None, page=1, per_page=24, sort_by='year', sort_dir='desc'):
     """Fetch movies with optional filters, returns paginated result."""
-    where_clauses = []
+    where_clauses = ["year IS NOT NULL AND year >= 1880"]
     params = []
 
     if filters:
@@ -166,7 +166,7 @@ def get_movies(filters=None, page=1, per_page=24, sort_by='year', sort_dir='desc
             where_clauses.append("duration <= ?")
             params.append(int(filters['duration_max']))
 
-    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+    where_sql = " AND ".join(where_clauses)
 
     valid_sorts = {'year': 'year', 'rating': 'rating', 'title': 'title_gr', 'duration': 'duration'}
     sort_col = valid_sorts.get(sort_by, 'year')
@@ -197,6 +197,62 @@ def get_movies(filters=None, page=1, per_page=24, sort_by='year', sort_dir='desc
         }
 
 
+def get_random_movie(filters=None):
+    """Return the slug of a random movie matching the given filters."""
+    where_clauses = ["year IS NOT NULL AND year >= 1880"]
+    params = []
+
+    if filters:
+        if filters.get('title'):
+            where_clauses.append("(norm(title_gr) LIKE ? OR norm(title_orig) LIKE ? OR norm(director) LIKE ?)")
+            t = f"%{_normalize(filters['title'])}%"
+            params.extend([t, t, t])
+        if filters.get('year_from'):
+            where_clauses.append("year >= ?")
+            params.append(int(filters['year_from']))
+        if filters.get('year_to'):
+            where_clauses.append("year <= ?")
+            params.append(int(filters['year_to']))
+        if filters.get('countries'):
+            countries = filters['countries'] if isinstance(filters['countries'], list) else [filters['countries']]
+            countries = [c for c in countries if c]
+            if countries:
+                placeholders = ', '.join('?' * len(countries))
+                where_clauses.append(f"country IN ({placeholders})")
+                params.extend(countries)
+        if filters.get('genres'):
+            genres = filters['genres'] if isinstance(filters['genres'], list) else [filters['genres']]
+            genres = [g for g in genres if g]
+            if genres:
+                genre_clauses = ' OR '.join(['genre LIKE ?' for _ in genres])
+                where_clauses.append(f"({genre_clauses})")
+                params.extend([f"%{g}%" for g in genres])
+        if filters.get('rating_min') is not None and filters['rating_min'] != '':
+            where_clauses.append("rating >= ?")
+            params.append(float(filters['rating_min']))
+        if filters.get('rating_max') is not None and filters['rating_max'] != '':
+            where_clauses.append("rating <= ?")
+            params.append(float(filters['rating_max']))
+        if filters.get('director'):
+            where_clauses.append("norm(director) LIKE ?")
+            params.append(f"%{_normalize(filters['director'])}%")
+        if filters.get('duration_min'):
+            where_clauses.append("duration >= ?")
+            params.append(int(filters['duration_min']))
+        if filters.get('duration_max'):
+            where_clauses.append("duration <= ?")
+            params.append(int(filters['duration_max']))
+
+    where_sql = " AND ".join(where_clauses)
+
+    with get_db() as conn:
+        row = conn.execute(
+            f"SELECT slug FROM movies WHERE {where_sql} ORDER BY RANDOM() LIMIT 1",
+            params
+        ).fetchone()
+        return row['slug'] if row else None
+
+
 def get_movie_detail(slug):
     """Get full movie details including synopsis."""
     with get_db() as conn:
@@ -208,11 +264,11 @@ def get_filter_options():
     """Return distinct values for filter dropdowns."""
     with get_db() as conn:
         years = [r[0] for r in conn.execute(
-            "SELECT DISTINCT year FROM movies WHERE year IS NOT NULL ORDER BY year DESC"
+            "SELECT DISTINCT year FROM movies WHERE year IS NOT NULL AND year >= 1880 ORDER BY year DESC"
         ).fetchall()]
 
         countries_raw = [r[0] for r in conn.execute(
-            "SELECT DISTINCT country FROM movies WHERE country IS NOT NULL AND country != '' ORDER BY country"
+            "SELECT DISTINCT country FROM movies WHERE year IS NOT NULL AND year >= 1880 AND country IS NOT NULL AND country != '' ORDER BY country"
         ).fetchall()]
         # Expand comma-separated countries
         countries = sorted(set(
@@ -220,7 +276,7 @@ def get_filter_options():
         ))
 
         genres_raw = [r[0] for r in conn.execute(
-            "SELECT DISTINCT genre FROM movies WHERE genre IS NOT NULL AND genre != '' ORDER BY genre"
+            "SELECT DISTINCT genre FROM movies WHERE year IS NOT NULL AND year >= 1880 AND genre IS NOT NULL AND genre != '' ORDER BY genre"
         ).fetchall()]
         genres = sorted(set(
             g.strip() for raw in genres_raw for g in raw.split(',') if g.strip()
@@ -233,7 +289,8 @@ def get_filter_options():
                 MIN(year) as min_year,
                 MAX(year) as max_year,
                 COUNT(DISTINCT country) as country_count
-               FROM movies"""
+               FROM movies
+               WHERE year IS NOT NULL AND year >= 1880"""
         ).fetchone()
 
         return {
@@ -248,6 +305,6 @@ def get_scrape_stats():
     """Return current DB stats."""
     with get_db() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) as total, COUNT(CASE WHEN detail_scraped=1 THEN 1 END) as detailed FROM movies"
+            "SELECT COUNT(*) as total, COUNT(CASE WHEN detail_scraped=1 THEN 1 END) as detailed FROM movies WHERE year IS NOT NULL AND year >= 1880"
         ).fetchone()
         return dict(row) if row else {'total': 0, 'detailed': 0}

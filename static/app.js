@@ -534,6 +534,20 @@ document.getElementById('per-page').addEventListener('change', e => {
   state.perPage = parseInt(e.target.value); state.page = 1; loadMovies();
 });
 
+document.getElementById('btn-random').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-random');
+  btn.disabled = true;
+  const qs = buildQueryString(state.filters);
+  try {
+    const res = await fetch(`/api/movies/random?${qs}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.slug) openDetail(data.slug);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 document.getElementById('btn-reset').addEventListener('click', () => {
   document.getElementById('f-title').value      = '';
   document.getElementById('f-year-from').value  = '';
