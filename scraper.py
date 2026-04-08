@@ -455,9 +455,6 @@ def run_scrape(full_rescrape=False):
                                 'slug': slug,
                                 'athinorama_url': f"{BASE_URL}/cinema/movie/{slug}/",
                             })
-                        # Always update rating if we got one (works for new and existing)
-                        if entry.get('rating') is not None:
-                            database.update_rating(slug, entry['rating'])
                     logger.info(f"Year {year}: {len(entries)} movies found ({len(new_for_year)} new)")
                 except PWTimeout:
                     logger.warning(f"Timeout on year {year}, skipping")
@@ -537,7 +534,7 @@ def run_scrape(full_rescrape=False):
 
 
 def run_ratings_scrape():
-    """Re-run only Phase 1 across all years to update ratings. Fast — no detail page visits."""
+    """Re-scrape rating from every detail page using span.rating-value (accurate source)."""
     global progress
 
     progress.update({
@@ -549,53 +546,58 @@ def run_ratings_scrape():
     _pause_event.set()
 
     try:
-        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+        with database.get_db() as conn:
+            rows = conn.execute(
+                "SELECT slug FROM movies WHERE detail_scraped = 1"
+            ).fetchall()
+        slugs = [r['slug'] for r in rows]
 
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
-            ctx = browser.new_context(
-                user_agent=(
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                    'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/120.0.0.0 Safari/537.36'
-                ),
-                locale='el-GR',
-                viewport={'width': 1280, 'height': 900},
-            )
-            page = ctx.new_page()
-            page.set_default_timeout(30_000)
+        progress['total'] = len(slugs)
+        logger.info(f"Ratings update: {len(slugs)} detail pages to check")
 
-            current_year = datetime.now().year
-            years = list(range(1916, current_year + 1))
-            progress['total'] = len(years)
+        WORKERS = 8
 
-            for i, year in enumerate(years):
+        def _update_one_rating(slug):
+            _pause_event.wait()
+            if not progress['running']:
+                return
+            from bs4 import BeautifulSoup
+            url = f"{BASE_URL}/cinema/movie/{slug}/"
+            try:
+                resp = SESSION.get(url, timeout=15)
+                if resp.status_code != 200:
+                    return
+                soup = BeautifulSoup(resp.content, 'html.parser')
+                el = soup.select_one('span.rating-value')
+                if el:
+                    try:
+                        r_val = float(el.get_text(strip=True).replace(',', '.'))
+                        new_rating = r_val if 0 < r_val <= 5 else None
+                    except (ValueError, TypeError):
+                        new_rating = None
+                else:
+                    new_rating = None
+                database.update_rating(slug, new_rating)
+                progress['updated_count'] += 1
+            except Exception as exc:
+                logger.warning(f"Rating update failed for {slug}: {exc}")
+
+        with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+            futures = {executor.submit(_update_one_rating, slug): slug for slug in slugs}
+            for i, future in enumerate(as_completed(futures)):
                 _pause_event.wait()
                 if not progress['running']:
+                    executor.shutdown(wait=False, cancel_futures=True)
                     break
-
                 progress['current'] = i + 1
-                progress['message'] = f"Σάρωση έτους {year}…"
-
+                progress['message'] = futures[future]
                 try:
-                    page.goto(f"{ARCHIVE_BASE}/{year}", wait_until='domcontentloaded')
-                    _scroll_to_bottom(page)
-                    entries = _get_slugs_from_page(page)
-                    for entry in entries:
-                        if entry.get('rating') is not None:
-                            database.update_rating(entry['slug'], entry['rating'])
-                            progress['updated_count'] += 1
-                except PWTimeout:
-                    logger.warning(f"Timeout on year {year}")
+                    future.result()
                 except Exception as exc:
-                    logger.error(f"Error on year {year}: {exc}")
-
-                time.sleep(0.25)
-
-            browser.close()
+                    logger.error(f"Worker error for {futures[future]}: {exc}")
 
         progress['phase'] = 'Ολοκληρώθηκε'
-        progress['message'] = f"Ενημερώθηκαν {progress['updated_count']} αξιολογήσεις."
+        progress['message'] = f"Ελέγχθηκαν {progress['updated_count']} ταινίες."
 
     except Exception as exc:
         logger.exception("Fatal ratings scrape error")
