@@ -13,10 +13,12 @@ const state = {
   loading: false,
 };
 
-let debounceTimer = null;
-let scrapePoller  = null;
-let tsCountry     = null;
-let tsGenre       = null;
+let debounceTimer  = null;
+let scrapePoller   = null;
+let tsCountry      = null;
+let tsGenre        = null;
+let currentSlugs   = [];
+let currentSlugIdx = -1;
 
 // ── Bootstrap modal handles ────────────────────────────────────────────────
 const movieModal  = new bootstrap.Modal(document.getElementById('movieModal'));
@@ -232,6 +234,7 @@ async function refreshStats() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function renderGrid(movies) {
+  currentSlugs = movies.map(m => m.slug);
   grid.innerHTML = movies.map(m => {
     const poster  = posterSrc(m.poster_url);
     const genre1  = m.genre ? m.genre.split(',')[0].trim() : '';
@@ -325,7 +328,16 @@ document.getElementById('movieModal').addEventListener('hidden.bs.modal', () => 
   document.getElementById('modal-trailer-wrap').style.display = 'none';
 });
 
+function updateModalNavButtons() {
+  const prevBtn = document.getElementById('modal-btn-prev');
+  const nextBtn = document.getElementById('modal-btn-next');
+  if (prevBtn) prevBtn.disabled = currentSlugIdx <= 0;
+  if (nextBtn) nextBtn.disabled = currentSlugIdx < 0 || currentSlugIdx >= currentSlugs.length - 1;
+}
+
 async function openDetail(slug) {
+  currentSlugIdx = currentSlugs.indexOf(slug);
+  updateModalNavButtons();
   // Reset modal
   document.getElementById('modal-poster').style.display = 'none';
   document.getElementById('modal-poster-placeholder').style.display = 'flex';
@@ -536,6 +548,28 @@ document.getElementById('per-page').addEventListener('change', e => {
 
 document.getElementById('btn-random').addEventListener('click', async () => {
   const btn = document.getElementById('btn-random');
+  btn.disabled = true;
+  const qs = buildQueryString(state.filters);
+  try {
+    const res = await fetch(`/api/movies/random?${qs}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.slug) openDetail(data.slug);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('modal-btn-prev').addEventListener('click', () => {
+  if (currentSlugIdx > 0) openDetail(currentSlugs[currentSlugIdx - 1]);
+});
+
+document.getElementById('modal-btn-next').addEventListener('click', () => {
+  if (currentSlugIdx < currentSlugs.length - 1) openDetail(currentSlugs[currentSlugIdx + 1]);
+});
+
+document.getElementById('modal-btn-random').addEventListener('click', async () => {
+  const btn = document.getElementById('modal-btn-random');
   btn.disabled = true;
   const qs = buildQueryString(state.filters);
   try {
