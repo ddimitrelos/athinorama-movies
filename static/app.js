@@ -331,8 +331,9 @@ document.getElementById('movieModal').addEventListener('hidden.bs.modal', () => 
 function updateModalNavButtons() {
   const prevBtn = document.getElementById('modal-btn-prev');
   const nextBtn = document.getElementById('modal-btn-next');
-  if (prevBtn) prevBtn.disabled = currentSlugIdx <= 0;
-  if (nextBtn) nextBtn.disabled = currentSlugIdx < 0 || currentSlugIdx >= currentSlugs.length - 1;
+  const inList = currentSlugIdx >= 0;
+  if (prevBtn) prevBtn.disabled = inList && currentSlugIdx === 0;
+  if (nextBtn) nextBtn.disabled = inList && currentSlugIdx === currentSlugs.length - 1;
 }
 
 async function openDetail(slug) {
@@ -562,10 +563,12 @@ document.getElementById('btn-random').addEventListener('click', async () => {
 
 document.getElementById('modal-btn-prev').addEventListener('click', () => {
   if (currentSlugIdx > 0) openDetail(currentSlugs[currentSlugIdx - 1]);
+  else if (currentSlugIdx === -1 && currentSlugs.length > 0) openDetail(currentSlugs[currentSlugs.length - 1]);
 });
 
 document.getElementById('modal-btn-next').addEventListener('click', () => {
-  if (currentSlugIdx < currentSlugs.length - 1) openDetail(currentSlugs[currentSlugIdx + 1]);
+  if (currentSlugIdx >= 0 && currentSlugIdx < currentSlugs.length - 1) openDetail(currentSlugs[currentSlugIdx + 1]);
+  else if (currentSlugIdx === -1 && currentSlugs.length > 0) openDetail(currentSlugs[0]);
 });
 
 document.getElementById('modal-btn-random').addEventListener('click', async () => {
