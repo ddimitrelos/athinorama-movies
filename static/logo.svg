@@ -1,44 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 230 48" width="230" height="48" role="img" aria-label="Αθηνόραμα Αρχείο Ταινιών">
 
-  <!-- ── Film frame badge ── -->
-  <!-- Outer red frame -->
-  <rect x="1" y="2" width="46" height="44" rx="4" fill="#e50914"/>
-
-  <!-- Top perforation strip -->
-  <rect x="1" y="2" width="46" height="11" rx="4" fill="#c20812"/>
-  <rect x="1" y="7" width="46" height="6" fill="#c20812"/>
-  <!-- Top perfs -->
-  <rect x="5"  y="3.5" width="6" height="8" rx="1.5" fill="#0a0a14"/>
-  <rect x="14" y="3.5" width="6" height="8" rx="1.5" fill="#0a0a14"/>
-  <rect x="23" y="3.5" width="6" height="8" rx="1.5" fill="#0a0a14"/>
-  <rect x="32" y="3.5" width="6" height="8" rx="1.5" fill="#0a0a14"/>
-  <rect x="38" y="3.5" width="7" height="8" rx="1.5" fill="#0a0a14"/>
-
-  <!-- Bottom perforation strip -->
-  <rect x="1" y="35" width="46" height="11" rx="4" fill="#c20812"/>
-  <rect x="1" y="35" width="46" height="6" fill="#c20812"/>
-  <!-- Bottom perfs -->
-  <rect x="5"  y="36.5" width="6" height="8" rx="1.5" fill="#0a0a14"/>
-  <rect x="14" y="36.5" width="6" height="8" rx="1.5" fill="#0a0a14"/>
-  <rect x="23" y="36.5" width="6" height="8" rx="1.5" fill="#0a0a14"/>
-  <rect x="32" y="36.5" width="6" height="8" rx="1.5" fill="#0a0a14"/>
-  <rect x="38" y="36.5" width="7" height="8" rx="1.5" fill="#0a0a14"/>
-
-  <!-- Inner viewing area (dark screen) -->
-  <rect x="1" y="13" width="46" height="22" fill="#0d0d1a"/>
-
-  <!-- Stylised Α — bold, yellow, centred in the frame -->
-  <text x="24" y="30"
-        font-family="Georgia, 'Times New Roman', serif"
-        font-size="21" font-weight="900"
-        fill="#f5c518"
-        text-anchor="middle"
-        dominant-baseline="auto">Α</text>
-
-  <!-- Tiny star accent (top-right of the Α, referencing Athinorama ratings) -->
-  <polygon
-    points="38,13 39.2,16.6 43,16.6 40,18.8 41.2,22.4 38,20.2 34.8,22.4 36,18.8 33,16.6 36.8,16.6"
-    fill="#f5c518" opacity="0.90"/>
+  <!-- ── Athinorama brand mark (PNG) ── -->
+  <image href="athinorama-mark.png" x="0" y="0" width="48" height="48"
+         preserveAspectRatio="xMidYMid meet"/>
 
   <!-- ── Logotype text ── -->
   <!-- Primary: app Greek name -->
