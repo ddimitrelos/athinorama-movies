@@ -1,0 +1,59 @@
+name: Weekly Scrape
+
+# Scheduled weekly scrape that replaces the old Windows Task Scheduler job.
+# Runs scraper.py via auto_scrape_push.py, commits movies.db back to master,
+# and relies on the GitHub push webhook to trigger a Railway redeploy.
+
+on:
+  schedule:
+    # Thursday 13:00 UTC = 15:00 EET (winter) / 16:00 EEST (summer).
+    # Athinorama publishes weekly listings on Thursday; this runs after.
+    - cron: '0 13 * * 4'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers (chromium + OS deps)
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Configure git identity for auto-commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Run scrape + commit + push
+        run: python auto_scrape_push.py
+
+      - name: Upload scrape log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-scrape-log
+          path: auto_scrape.log
+          if-no-files-found: ignore

@@ -28,10 +28,12 @@ HEADERS = {
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
 
-# Hardcode the Playwright browsers path so it works regardless of how
-# the Flask process is launched (hidden window, service, etc.)
-os.environ['PLAYWRIGHT_BROWSERS_PATH'] = (
-    r'C:\Users\dimitrios.dimitrelos\AppData\Local\ms-playwright'
+# Default the Playwright browsers path for the local Flask process (hidden
+# window, service, etc.). Use setdefault so CI / other environments can
+# override via env var (e.g. Linux runners use ~/.cache/ms-playwright).
+os.environ.setdefault(
+    'PLAYWRIGHT_BROWSERS_PATH',
+    r'C:\Users\dimitrios.dimitrelos\AppData\Local\ms-playwright',
 )
 
 BASE_URL = "https://www.athinorama.gr"
