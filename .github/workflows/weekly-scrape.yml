@@ -23,6 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    env:
+      # Override scraper.py's Windows-default browsers path. Must be set for
+      # both the `playwright install` step and the scraper run so they agree.
+      PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
