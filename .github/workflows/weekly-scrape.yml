@@ -2,7 +2,7 @@ name: Weekly Scrape
 
 # Scheduled weekly scrape that replaces the old Windows Task Scheduler job.
 # Runs scraper.py via auto_scrape_push.py, commits movies.db back to master,
-# and relies on the GitHub push webhook to trigger a Railway redeploy.
+# then uploads the fresh DB to PythonAnywhere and reloads the webapp.
 
 on:
   schedule:
@@ -54,6 +54,18 @@ jobs:
 
       - name: Run scrape + commit + push
         run: python auto_scrape_push.py
+
+      - name: Deploy fresh DB to PythonAnywhere
+        env:
+          PA_USER: doctorfiftyfive
+          PA_HOST: www.pythonanywhere.com
+          PA_TOKEN: ${{ secrets.PA_API_TOKEN }}
+        run: |
+          curl -fsS -X POST -H "Authorization: Token $PA_TOKEN" \
+            -F "content=@movies.db" \
+            "https://$PA_HOST/api/v0/user/$PA_USER/files/path/home/$PA_USER/athinorama-movies/movies.db"
+          curl -fsS -X POST -H "Authorization: Token $PA_TOKEN" \
+            "https://$PA_HOST/api/v0/user/$PA_USER/webapps/$PA_USER.pythonanywhere.com/reload/"
 
       - name: Upload scrape log on failure
         if: failure()
