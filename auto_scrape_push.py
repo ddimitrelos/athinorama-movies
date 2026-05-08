@@ -52,6 +52,15 @@ def run_scrape():
     new_count     = scraper.progress.get('new_count', 0)
     updated_count = scraper.progress.get('updated_count', 0)
     logger.info(f"Scrape complete — new: {new_count}, updated: {updated_count}")
+
+    logger.info("=== Missing poster fix started ===")
+    scraper.run_missing_posters()
+    if scraper.progress.get('error'):
+        logger.warning(f"Missing poster fix error: {scraper.progress['error']}")
+    else:
+        poster_count = scraper.progress.get('updated_count', 0)
+        logger.info(f"Missing poster fix complete — filled: {poster_count}")
+
     return new_count, updated_count
 
 

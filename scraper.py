@@ -609,6 +609,78 @@ def run_ratings_scrape():
         progress['completed_at'] = datetime.now().isoformat()
 
 
+def run_missing_posters():
+    """Fetch og:image for every detail-scraped movie that has no poster_url yet."""
+    global progress
+
+    progress.update({
+        'running': True, 'paused': False,
+        'started_at': datetime.now().isoformat(), 'completed_at': None,
+        'error': None, 'new_count': 0, 'updated_count': 0,
+        'phase': 'Ενημέρωση poster χωρίς εικόνα…', 'current': 0, 'total': 0, 'message': '',
+    })
+    _pause_event.set()
+
+    try:
+        with database.get_db() as conn:
+            rows = conn.execute(
+                "SELECT slug FROM movies WHERE poster_url IS NULL AND detail_scraped = 1"
+            ).fetchall()
+        slugs = [r['slug'] for r in rows]
+
+        progress['total'] = len(slugs)
+        logger.info(f"Missing posters: {len(slugs)} movies to check")
+
+        WORKERS = 8
+
+        def _fetch_one_poster(slug):
+            _pause_event.wait()
+            if not progress['running']:
+                return
+            url = f"{BASE_URL}/cinema/movie/{slug}/"
+            try:
+                resp = SESSION.get(url, timeout=15)
+                if resp.status_code != 200:
+                    return
+                soup = BeautifulSoup(resp.content, 'html.parser')
+                og = soup.find('meta', property='og:image')
+                if og and og.get('content'):
+                    with database.get_db() as conn:
+                        conn.execute(
+                            "UPDATE movies SET poster_url = ?, last_updated = ? WHERE slug = ?",
+                            (og['content'], datetime.now().isoformat(), slug)
+                        )
+                        conn.commit()
+                    progress['updated_count'] += 1
+            except Exception as exc:
+                logger.warning(f"Poster fetch failed for {slug}: {exc}")
+
+        with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+            futures = {executor.submit(_fetch_one_poster, slug): slug for slug in slugs}
+            for i, future in enumerate(as_completed(futures)):
+                _pause_event.wait()
+                if not progress['running']:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+                progress['current'] = i + 1
+                progress['message'] = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    logger.error(f"Worker error for {futures[future]}: {exc}")
+
+        progress['phase'] = 'Ολοκληρώθηκε'
+        progress['message'] = f"Βρέθηκαν poster για {progress['updated_count']} ταινίες."
+        logger.info(progress['message'])
+
+    except Exception as exc:
+        logger.exception("Fatal missing-posters error")
+        progress['error'] = str(exc)
+    finally:
+        progress['running'] = False
+        progress['completed_at'] = datetime.now().isoformat()
+
+
 def pause_scrape():
     progress['paused'] = True
     _pause_event.clear()
