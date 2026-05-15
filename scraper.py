@@ -39,6 +39,21 @@ os.environ.setdefault(
 BASE_URL = "https://www.athinorama.gr"
 ARCHIVE_BASE = f"{BASE_URL}/cinema/moviearchive"
 
+# Load .env if present (PythonAnywhere free tier has no env-var UI)
+def _load_dotenv():
+    _env = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+    if not os.path.exists(_env):
+        return
+    with open(_env, encoding='utf-8') as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if not _line or _line.startswith('#') or '=' not in _line:
+                continue
+            _k, _, _v = _line.partition('=')
+            os.environ.setdefault(_k.strip(), _v.strip())
+
+_load_dotenv()
+
 TMDB_BEARER_TOKEN = os.environ.get('TMDB_BEARER_TOKEN', '')
 TMDB_SEARCH_URL   = 'https://api.themoviedb.org/3/search/movie'
 TMDB_IMAGE_BASE   = 'https://image.tmdb.org/t/p/w500'

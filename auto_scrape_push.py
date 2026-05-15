@@ -16,6 +16,24 @@ import subprocess
 from datetime import datetime
 
 # ------------------------------------------------------------------
+# Load .env file if present (used on PythonAnywhere where there is
+# no environment-variable UI in the free tier)
+# ------------------------------------------------------------------
+def _load_dotenv():
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, _, val = line.partition('=')
+            os.environ.setdefault(key.strip(), val.strip())
+
+_load_dotenv()
+
+# ------------------------------------------------------------------
 # Logging – write to a rolling log file next to this script
 # ------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
