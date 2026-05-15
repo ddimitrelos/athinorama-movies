@@ -103,19 +103,22 @@ def _fetch_tmdb_poster(title_orig, title_gr, year):
         return None
     headers = {'Authorization': f'Bearer {TMDB_BEARER_TOKEN}', 'Accept': 'application/json'}
     for title in filter(None, [title_orig, title_gr]):
-        try:
-            params = {'query': title, 'language': 'en-US'}
-            if year:
-                params['year'] = year
-            resp = SESSION.get(TMDB_SEARCH_URL, params=params, headers=headers, timeout=10)
-            if resp.status_code != 200:
-                continue
-            results = resp.json().get('results', [])
-            for r in results:
-                if r.get('poster_path'):
-                    return f"{TMDB_IMAGE_BASE}{r['poster_path']}"
-        except Exception as exc:
-            logger.debug(f"TMDB lookup failed for '{title}': {exc}")
+        # Try with year first, then without — TMDB may list the film under a
+        # different year than what Athinorama has (e.g. production vs release year)
+        attempts = [{'query': title, 'language': 'en-US', 'year': year},
+                    {'query': title, 'language': 'en-US'}] if year else \
+                   [{'query': title, 'language': 'en-US'}]
+        for params in attempts:
+            try:
+                resp = SESSION.get(TMDB_SEARCH_URL, params=params, headers=headers, timeout=10)
+                if resp.status_code != 200:
+                    continue
+                results = resp.json().get('results', [])
+                for r in results:
+                    if r.get('poster_path'):
+                        return f"{TMDB_IMAGE_BASE}{r['poster_path']}"
+            except Exception as exc:
+                logger.debug(f"TMDB lookup failed for '{title}': {exc}")
     return None
 
 
