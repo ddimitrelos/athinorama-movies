@@ -39,6 +39,10 @@ os.environ.setdefault(
 BASE_URL = "https://www.athinorama.gr"
 ARCHIVE_BASE = f"{BASE_URL}/cinema/moviearchive"
 
+TMDB_BEARER_TOKEN = os.environ.get('TMDB_BEARER_TOKEN', '')
+TMDB_SEARCH_URL   = 'https://api.themoviedb.org/3/search/movie'
+TMDB_IMAGE_BASE   = 'https://image.tmdb.org/t/p/w500'
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -64,6 +68,41 @@ _pause_event.set()  # Not paused initially
 # ---------------------------------------------------------------------------
 # Helper utilities
 # ---------------------------------------------------------------------------
+
+def _is_valid_poster_url(url):
+    """Return True only if the URL looks like a real image (has a file ext or query params)."""
+    if not url:
+        return False
+    path = url.split('?')[0].rstrip('/')
+    return bool(re.search(r'\.(jpe?g|png|webp|gif)$', path, re.I) or
+                re.search(r'/[^/]+\.[a-z]{2,4}$', path, re.I))
+
+
+def _fetch_tmdb_poster(title_orig, title_gr, year):
+    """
+    Search TMDB for a movie poster.  Tries title_orig first, then title_gr.
+    Uses Bearer-token auth (TMDB v3 read-access token).
+    Returns a full image URL (tmdb.org) or None when no token / no match.
+    """
+    if not TMDB_BEARER_TOKEN:
+        return None
+    headers = {'Authorization': f'Bearer {TMDB_BEARER_TOKEN}', 'Accept': 'application/json'}
+    for title in filter(None, [title_orig, title_gr]):
+        try:
+            params = {'query': title, 'language': 'en-US'}
+            if year:
+                params['year'] = year
+            resp = SESSION.get(TMDB_SEARCH_URL, params=params, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                continue
+            results = resp.json().get('results', [])
+            for r in results:
+                if r.get('poster_path'):
+                    return f"{TMDB_IMAGE_BASE}{r['poster_path']}"
+        except Exception as exc:
+            logger.debug(f"TMDB lookup failed for '{title}': {exc}")
+    return None
+
 
 def _parse_duration(duration_str):
     """Convert ISO 8601 duration (PT1H40M) to minutes."""
@@ -232,8 +271,32 @@ def _scrape_detail_fast(slug):
 
         # Always prefer og:image — the JSON-LD image path (/lmnts/...) returns 502
         og_img = soup.find('meta', property='og:image')
-        if og_img and og_img.get('content'):
-            movie_data['poster_url'] = og_img['content']
+        og_url = og_img['content'] if og_img and og_img.get('content') else None
+
+        if og_url and _is_valid_poster_url(og_url):
+            # /lmnts/ images sometimes 404 for unreleased films — verify quickly
+            if '/lmnts/' in og_url:
+                try:
+                    head = SESSION.head(og_url, timeout=8, allow_redirects=True)
+                    if head.status_code == 200:
+                        movie_data['poster_url'] = og_url
+                    else:
+                        movie_data['poster_url'] = _fetch_tmdb_poster(
+                            movie_data.get('title_orig', ''),
+                            movie_data.get('title_gr', ''),
+                            movie_data.get('year'),
+                        )
+                except Exception:
+                    movie_data['poster_url'] = og_url  # keep on network error
+            else:
+                movie_data['poster_url'] = og_url
+        else:
+            # No og:image (or partial/broken URL) — try TMDB
+            movie_data['poster_url'] = _fetch_tmdb_poster(
+                movie_data.get('title_orig', ''),
+                movie_data.get('title_gr', ''),
+                movie_data.get('year'),
+            )
 
         # Override rating with the displayed HTML rating — JSON-LD ratingValue can
         # be stale/incorrect while the page shows a different aggregated value.
@@ -610,7 +673,16 @@ def run_ratings_scrape():
 
 
 def run_missing_posters():
-    """Fetch og:image for every detail-scraped movie that has no poster_url yet."""
+    """
+    For every detail-scraped movie that still has no usable poster:
+      1. Re-fetch og:image from the Athinorama page.
+      2. If og:image is a /lmnts/ path that 404s, fall back to TMDB.
+      3. If og:image is absent altogether, fall back to TMDB.
+
+    Covers two cases:
+      - poster_url IS NULL  (never scraped a poster)
+      - poster_url LIKE '%/lmnts/%'  (may be a 404 for unreleased films)
+    """
     global progress
 
     progress.update({
@@ -624,39 +696,72 @@ def run_missing_posters():
     try:
         with database.get_db() as conn:
             rows = conn.execute(
-                "SELECT slug FROM movies WHERE poster_url IS NULL AND detail_scraped = 1"
+                """SELECT slug, title_gr, title_orig, year, poster_url
+                   FROM movies
+                   WHERE detail_scraped = 1
+                     AND (poster_url IS NULL OR poster_url LIKE '%/lmnts/%')"""
             ).fetchall()
-        slugs = [r['slug'] for r in rows]
+        movies = [dict(r) for r in rows]
 
-        progress['total'] = len(slugs)
-        logger.info(f"Missing posters: {len(slugs)} movies to check")
+        progress['total'] = len(movies)
+        logger.info(f"Missing posters: {len(movies)} movies to check")
 
         WORKERS = 8
 
-        def _fetch_one_poster(slug):
+        def _fix_one_poster(movie):
             _pause_event.wait()
             if not progress['running']:
                 return
-            url = f"{BASE_URL}/cinema/movie/{slug}/"
+
+            slug        = movie['slug']
+            stored_url  = movie['poster_url']
+            new_url     = None
+
             try:
-                resp = SESSION.get(url, timeout=15)
-                if resp.status_code != 200:
-                    return
-                soup = BeautifulSoup(resp.content, 'html.parser')
-                og = soup.find('meta', property='og:image')
-                if og and og.get('content'):
+                # Step 1: re-fetch the Athinorama page for og:image
+                page_url = f"{BASE_URL}/cinema/movie/{slug}/"
+                resp = SESSION.get(page_url, timeout=15)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.content, 'html.parser')
+                    og = soup.find('meta', property='og:image')
+                    og_url = og['content'] if og and og.get('content') else None
+
+                    if og_url and _is_valid_poster_url(og_url):
+                        # Verify /lmnts/ URLs; non-lmnts URLs (CDN) are trusted
+                        if '/lmnts/' in og_url:
+                            try:
+                                head = SESSION.head(og_url, timeout=8, allow_redirects=True)
+                                new_url = og_url if head.status_code == 200 else None
+                            except Exception:
+                                new_url = og_url  # keep on network error
+                        else:
+                            new_url = og_url
+
+                # Step 2: TMDB fallback if Athinorama has no working image
+                if not new_url:
+                    new_url = _fetch_tmdb_poster(
+                        movie.get('title_orig', ''),
+                        movie.get('title_gr', ''),
+                        movie.get('year'),
+                    )
+
+                # Only write if we found something different from what's stored
+                if new_url and new_url != stored_url:
                     with database.get_db() as conn:
                         conn.execute(
                             "UPDATE movies SET poster_url = ?, last_updated = ? WHERE slug = ?",
-                            (og['content'], datetime.now().isoformat(), slug)
+                            (new_url, datetime.now().isoformat(), slug)
                         )
                         conn.commit()
                     progress['updated_count'] += 1
+                    source = 'TMDB' if new_url and 'tmdb' in new_url else 'Athinorama'
+                    logger.info(f"Poster fixed [{source}]: {slug}")
+
             except Exception as exc:
-                logger.warning(f"Poster fetch failed for {slug}: {exc}")
+                logger.warning(f"Poster fix failed for {slug}: {exc}")
 
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
-            futures = {executor.submit(_fetch_one_poster, slug): slug for slug in slugs}
+            futures = {executor.submit(_fix_one_poster, movie): movie['slug'] for movie in movies}
             for i, future in enumerate(as_completed(futures)):
                 _pause_event.wait()
                 if not progress['running']:
