@@ -732,8 +732,11 @@ def run_missing_posters():
             stored_url  = movie['poster_url']
             new_url     = None
 
+            # Step 1: re-fetch the Athinorama page for og:image
+            # Wrapped in its own try so a proxy/network block doesn't
+            # prevent the TMDB fallback from running (e.g. PythonAnywhere
+            # free tier blocks outbound connections to athinorama.gr).
             try:
-                # Step 1: re-fetch the Athinorama page for og:image
                 page_url = f"{BASE_URL}/cinema/movie/{slug}/"
                 resp = SESSION.get(page_url, timeout=15)
                 if resp.status_code == 200:
@@ -751,17 +754,24 @@ def run_missing_posters():
                                 new_url = og_url  # keep on network error
                         else:
                             new_url = og_url
+            except Exception as exc:
+                logger.debug(f"Athinorama fetch skipped for {slug}: {exc}")
 
-                # Step 2: TMDB fallback if Athinorama has no working image
-                if not new_url:
+            # Step 2: TMDB fallback if Athinorama had no working image
+            # (api.themoviedb.org is whitelisted on PythonAnywhere free tier)
+            if not new_url:
+                try:
                     new_url = _fetch_tmdb_poster(
                         movie.get('title_orig', ''),
                         movie.get('title_gr', ''),
                         movie.get('year'),
                     )
+                except Exception as exc:
+                    logger.warning(f"TMDB fetch failed for {slug}: {exc}")
 
-                # Only write if we found something different from what's stored
-                if new_url and new_url != stored_url:
+            # Only write if we found something different from what's stored
+            if new_url and new_url != stored_url:
+                try:
                     with database.get_db() as conn:
                         conn.execute(
                             "UPDATE movies SET poster_url = ?, last_updated = ? WHERE slug = ?",
@@ -771,9 +781,8 @@ def run_missing_posters():
                     progress['updated_count'] += 1
                     source = 'TMDB' if new_url and 'tmdb' in new_url else 'Athinorama'
                     logger.info(f"Poster fixed [{source}]: {slug}")
-
-            except Exception as exc:
-                logger.warning(f"Poster fix failed for {slug}: {exc}")
+                except Exception as exc:
+                    logger.warning(f"DB write failed for {slug}: {exc}")
 
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
             futures = {executor.submit(_fix_one_poster, movie): movie['slug'] for movie in movies}
