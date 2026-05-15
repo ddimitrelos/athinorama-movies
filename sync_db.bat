@@ -19,7 +19,7 @@ git commit -m "DB sync %date% %time:~0,8%"
 
 echo.
 echo [3/3] Pushing to GitHub (Railway will auto-redeploy)...
-git push origin main
+git push origin master
 
 echo.
 echo ========================================
