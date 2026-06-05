@@ -21,7 +21,11 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 minutes wasn't enough once the missing-poster pass (commit 72d2b16)
+    # was added — scrape + posters + commit + push together take ~30 min,
+    # so the PA deploy step was getting killed by the timeout. 60 leaves
+    # comfortable headroom.
+    timeout-minutes: 60
 
     env:
       # Override scraper.py's Windows-default browsers path. Must be set for
