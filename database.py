@@ -68,7 +68,10 @@ def upsert_movie(movie_data):
     # successfully scraped, so stale Phase-1 values get cleared.
     # All other None fields are dropped to avoid overwriting good data.
     detail = movie_data.get('detail_scraped')
-    explicit_nulls = {k for k in ('rating', 'year') if k in movie_data and movie_data[k] is None and detail}
+    # Only rating is cleared explicitly on detail scrape (no review = no rating).
+    # Year is never cleared: the Phase-1 archive year is always a valid fallback
+    # and should survive even when the detail page has no dateCreated field.
+    explicit_nulls = {'rating'} if ('rating' in movie_data and movie_data.get('rating') is None and detail) else set()
     movie_data = {k: v for k, v in movie_data.items() if v is not None}
     for k in explicit_nulls:
         movie_data[k] = None
