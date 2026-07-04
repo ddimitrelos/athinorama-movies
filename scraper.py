@@ -150,9 +150,11 @@ def _parse_json_ld(data, slug):
     if title_orig == title_gr:
         title_orig = ''
 
-    # Year (skip invalid dates like "0001-01-01" which is a .NET default)
+    # Year: copyrightYear = production year (most reliable).
+    # datePublished / dateCreated on Athinorama is the Greek release date,
+    # which can differ by 1-2 years — use only as last resort.
     year = None
-    for field in ('dateCreated', 'datePublished', 'copyrightYear'):
+    for field in ('copyrightYear', 'datePublished', 'dateCreated'):
         val = data.get(field)
         if val:
             try:
@@ -162,8 +164,8 @@ def _parse_json_ld(data, slug):
                     break
             except (ValueError, TypeError):
                 pass
-    # Treat year=None as explicit so upsert_movie can clear stale values like 1
-    # (marker picked up by upsert_movie the same way rating=None is handled)
+    # year=None means "not found in JSON-LD" — the Phase-1 archive year in the
+    # DB will be preserved (see _scrape_detail_fast drop logic).
 
     # Country
     cd = data.get('countryOfOrigin')
@@ -351,6 +353,11 @@ def _scrape_detail_fast(slug):
                 if m:
                     movie_data['duration'] = int(m.group(1))
 
+        # Drop year=None so the Phase-1 archive year (already in DB) is preserved.
+        # JSON-LD year (if found) overrides it; otherwise Phase-1 wins.
+        if movie_data.get('year') is None and 'year' in movie_data:
+            del movie_data['year']
+
         return movie_data
 
     except Exception as exc:
@@ -533,9 +540,10 @@ def run_scrape(full_rescrape=False):
                             seen_slugs.add(slug)
                             new_for_year.append(slug)
                             all_slugs.append(slug)
-                            # Insert stub for new movies
+                            # Insert stub with archive year as initial fallback
                             database.upsert_movie({
                                 'slug': slug,
+                                'year': year,
                                 'athinorama_url': f"{BASE_URL}/cinema/movie/{slug}/",
                             })
                     logger.info(f"Year {year}: {len(entries)} movies found ({len(new_for_year)} new)")
