@@ -26,6 +26,18 @@ if not CLOUD_MODE:
 app = Flask(__name__)
 database.init_db()
 
+# One-time data fixes — safe to re-run (idempotent WHERE clauses)
+def _run_data_migrations():
+    with database.get_db() as conn:
+        # dateCreated on Athinorama is the Greek release date, not production year;
+        # copyrightYear=2025 is correct for this film.
+        conn.execute(
+            "UPDATE movies SET year=2025 WHERE slug='to_deipno_tou_franko-10091040' AND year!=2025"
+        )
+        conn.commit()
+
+_run_data_migrations()
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
