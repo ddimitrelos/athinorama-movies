@@ -318,6 +318,11 @@
         border-bottom: 1px solid #2a2a3e;
       }
       #movie-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+      /* Tom Select: keep dropdown absolutely positioned so it doesn't expand the
+         sidebar height, and ensure the control itself has a visible min-height */
+      .ts-wrapper { position: relative !important; }
+      .ts-dropdown { position: absolute !important; z-index: 1050; width: 100%; }
+      .ts-wrapper .ts-control { min-height: 38px; }
     }
   </style>
 </head>

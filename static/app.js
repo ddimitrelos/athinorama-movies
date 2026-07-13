@@ -322,6 +322,15 @@ function escHtml(str) {
 // Movie detail modal
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Close movie modal on Escape (belt-and-suspenders: Bootstrap's own handler only
+// fires reliably when the modal element itself holds focus, which is not guaranteed
+// after async content population)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('movieModal').classList.contains('show')) {
+    movieModal.hide();
+  }
+});
+
 // Stop trailer playback when modal closes
 document.getElementById('movieModal').addEventListener('hidden.bs.modal', () => {
   document.getElementById('modal-trailer').src = '';

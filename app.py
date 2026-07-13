@@ -38,6 +38,9 @@ def _run_data_migrations():
 
 _run_data_migrations()
 
+import migrate_countries
+migrate_countries.run_once()
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -106,21 +109,42 @@ def index():
 # ---------------------------------------------------------------------------
 # Movies API
 # ---------------------------------------------------------------------------
+def _parse_numeric_filters(args):
+    """Parse and validate numeric filter params; return (filters_dict, error_response)."""
+    int_fields   = ('year_from', 'year_to', 'duration_min', 'duration_max')
+    float_fields = ('rating_min', 'rating_max')
+    filters = {
+        'title':        args.get('title', '').strip() or None,
+        'countries':    args.getlist('country') or None,
+        'genres':       args.getlist('genre') or None,
+        'director':     args.get('director', '').strip() or None,
+    }
+    for field in int_fields:
+        raw = args.get(field) or None
+        if raw is not None:
+            try:
+                filters[field] = str(int(raw))
+            except (ValueError, TypeError):
+                return None, (jsonify({'error': f"Invalid value for '{field}': must be an integer"}), 400)
+        else:
+            filters[field] = None
+    for field in float_fields:
+        raw = args.get(field) or None
+        if raw is not None:
+            try:
+                filters[field] = str(float(raw))
+            except (ValueError, TypeError):
+                return None, (jsonify({'error': f"Invalid value for '{field}': must be a number"}), 400)
+        else:
+            filters[field] = None
+    return {k: v for k, v in filters.items() if v is not None}, None
+
+
 @app.route('/api/movies')
 def api_movies():
-    filters = {
-        'title':        request.args.get('title', '').strip() or None,
-        'year_from':    request.args.get('year_from') or None,
-        'year_to':      request.args.get('year_to') or None,
-        'countries':    request.args.getlist('country') or None,
-        'genres':       request.args.getlist('genre') or None,
-        'rating_min':   request.args.get('rating_min') or None,
-        'rating_max':   request.args.get('rating_max') or None,
-        'director':     request.args.get('director', '').strip() or None,
-        'duration_min': request.args.get('duration_min') or None,
-        'duration_max': request.args.get('duration_max') or None,
-    }
-    filters = {k: v for k, v in filters.items() if v is not None}
+    filters, err = _parse_numeric_filters(request.args)
+    if err:
+        return err
 
     try:
         page     = max(1, int(request.args.get('page', 1)))
@@ -136,19 +160,9 @@ def api_movies():
 
 @app.route('/api/movies/random')
 def api_random_movie():
-    filters = {
-        'title':        request.args.get('title', '').strip() or None,
-        'year_from':    request.args.get('year_from') or None,
-        'year_to':      request.args.get('year_to') or None,
-        'countries':    request.args.getlist('country') or None,
-        'genres':       request.args.getlist('genre') or None,
-        'rating_min':   request.args.get('rating_min') or None,
-        'rating_max':   request.args.get('rating_max') or None,
-        'director':     request.args.get('director', '').strip() or None,
-        'duration_min': request.args.get('duration_min') or None,
-        'duration_max': request.args.get('duration_max') or None,
-    }
-    filters = {k: v for k, v in filters.items() if v is not None}
+    filters, err = _parse_numeric_filters(request.args)
+    if err:
+        return err
     slug = database.get_random_movie(filters)
     if slug:
         return jsonify({'slug': slug})

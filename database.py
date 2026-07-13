@@ -137,9 +137,9 @@ def get_movies(filters=None, page=1, per_page=24, sort_by='year', sort_dir='desc
             countries = filters['countries'] if isinstance(filters['countries'], list) else [filters['countries']]
             countries = [c for c in countries if c]
             if countries:
-                placeholders = ', '.join('?' * len(countries))
-                where_clauses.append(f"country IN ({placeholders})")
-                params.extend(countries)
+                country_clauses = ' AND '.join(['country LIKE ?' for _ in countries])
+                where_clauses.append(f"({country_clauses})")
+                params.extend([f"%{c}%" for c in countries])
 
         if filters.get('genres'):
             genres = filters['genres'] if isinstance(filters['genres'], list) else [filters['genres']]
@@ -220,9 +220,9 @@ def get_random_movie(filters=None):
             countries = filters['countries'] if isinstance(filters['countries'], list) else [filters['countries']]
             countries = [c for c in countries if c]
             if countries:
-                placeholders = ', '.join('?' * len(countries))
-                where_clauses.append(f"country IN ({placeholders})")
-                params.extend(countries)
+                country_clauses = ' AND '.join(['country LIKE ?' for _ in countries])
+                where_clauses.append(f"({country_clauses})")
+                params.extend([f"%{c}%" for c in countries])
         if filters.get('genres'):
             genres = filters['genres'] if isinstance(filters['genres'], list) else [filters['genres']]
             genres = [g for g in genres if g]
