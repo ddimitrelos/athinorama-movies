@@ -247,6 +247,81 @@ def _parse_json_ld(data, slug):
     }
 
 
+_KNOWN_GENRES = {
+    'Αθλητική', 'Αισθηματική', 'Αστυνομική', 'Αστυνομικό θρίλερ',
+    'Βιογραφική', 'Γκανγκστερική', 'Γουέστερν', 'Διάφορες',
+    'Δικαστικό Θρίλερ', 'Δράσης', 'Δραματική', 'Δραματική Κωμωδία',
+    'Δραματική κομεντί', 'Επιστ. Φαντασίας', 'Εποχής', 'Ερωτική',
+    'Θρίλερ', 'Θρησκευτική', 'Ιστορική', 'Καράτε', 'Κατασκοπική',
+    'Κλασική', 'Κοινωνική', 'Κομεντί', 'Κωμωδία', 'Μικρού Μήκους',
+    'Μιούζικαλ', 'Μουσική', 'Μουσικό Ντοκιμαντέρ', 'Μυστηρίου',
+    'Νεανική', 'Ντοκιμαντέρ', 'Οικογενειακή', 'Παιδική', 'Περιπέτεια',
+    'Πολεμική', 'Πολιτική', 'Πολιτικό Θρίλερ', 'Ρομαντική Κομεντί',
+    'Ρομαντική Κωμωδία', 'Ρομαντική Περιπέτεια', 'Ρομαντική κομεντί',
+    'Ρομαντική κωμωδία', 'Σινεφίλ', 'Τρόμου', 'Φαντασίας',
+    'Φιλμ Νουάρ', 'Ψυχολογικό Θρίλερ', 'Animation',
+}
+
+
+def _parse_html_fallback(soup, slug, url):
+    """
+    Parse movie data from Athinorama HTML when no JSON-LD is present.
+    Reads from div.review-title, ul.review-tags, div.cast-crew, etc.
+    Returns a movie_data dict with detail_scraped=1.
+    """
+    data = {'slug': slug, 'athinorama_url': url, 'detail_scraped': 1}
+
+    h1 = soup.select_one('div.review-title h1') or soup.find('h1')
+    data['title_gr'] = h1.get_text(strip=True) if h1 else slug
+
+    orig = soup.select_one('ul.review-details span.original-title')
+    if orig:
+        data['title_orig'] = orig.get_text(strip=True)
+
+    year_el = soup.select_one('span.year')
+    if year_el:
+        try:
+            data['year'] = int(year_el.get_text(strip=True))
+        except ValueError:
+            pass
+
+    dur_el = soup.select_one('span.duration')
+    if dur_el:
+        m = re.search(r"(\d+)'", dur_el.get_text())
+        if m:
+            data['duration'] = int(m.group(1))
+
+    genres, countries = [], []
+    for tag in soup.select('ul.review-tags li a'):
+        t = tag.get_text(strip=True)
+        if t in _KNOWN_GENRES:
+            genres.append(t)
+        elif t:
+            countries.append(t)
+    if genres:
+        data['genre'] = genres[0]
+    if countries:
+        data['country'] = ', '.join(countries)
+
+    for crew_item in soup.select('div.cast-crew-item'):
+        h4 = crew_item.select_one('h4')
+        if not h4:
+            continue
+        names = [a.get_text(strip=True) for a in crew_item.select('nav a')]
+        if 'Σκηνοθεσία' in h4.get_text() and names:
+            data['director'] = ', '.join(names)
+        elif 'Με τους' in h4.get_text() and names:
+            data['cast'] = ', '.join(names)
+
+    synopsis_el = soup.select_one('div.summary p')
+    if synopsis_el:
+        txt = synopsis_el.get_text(strip=True)
+        if txt:
+            data['synopsis'] = txt
+
+    return data
+
+
 # ---------------------------------------------------------------------------
 # Fast requests-based detail scraper (no browser needed for detail pages)
 # ---------------------------------------------------------------------------
@@ -280,14 +355,7 @@ def _scrape_detail_fast(slug):
         if json_ld:
             movie_data = _parse_json_ld(json_ld, slug)
         else:
-            # Minimal fallback from HTML
-            h1 = soup.find('h1')
-            movie_data = {
-                'slug': slug,
-                'title_gr': h1.get_text(strip=True) if h1 else slug,
-                'athinorama_url': url,
-                'detail_scraped': 0,
-            }
+            movie_data = _parse_html_fallback(soup, slug, url)
 
         # Always prefer og:image — the JSON-LD image path (/lmnts/...) returns 502
         og_img = soup.find('meta', property='og:image')
