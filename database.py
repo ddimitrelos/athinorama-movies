@@ -186,7 +186,8 @@ def get_movies(filters=None, page=1, per_page=24, sort_by='year', sort_dir='desc
                        duration, genre, rating, poster_url, athinorama_url, "cast"
                 FROM movies
                 WHERE {where_sql}
-                ORDER BY {sort_col} {sort_direction} NULLS LAST
+                ORDER BY CASE WHEN poster_url IS NULL THEN 1 ELSE 0 END ASC,
+                         {sort_col} {sort_direction} NULLS LAST
                 LIMIT ? OFFSET ?""",
             params + [per_page, offset]
         ).fetchall()
