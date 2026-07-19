@@ -59,6 +59,21 @@ def init_db():
         cols = {r[1] for r in conn.execute("PRAGMA table_info(movies)").fetchall()}
         if 'trailer_url' not in cols:
             conn.execute("ALTER TABLE movies ADD COLUMN trailer_url TEXT")
+        for col in ('title_gr_norm', 'title_orig_norm', 'director_norm'):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE movies ADD COLUMN {col} TEXT")
+        # Create norm index after column migration
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_movies_title_gr_norm ON movies(title_gr_norm)"
+        )
+        # Backfill norm columns for existing rows that have NULL norm values
+        conn.execute("""
+            UPDATE movies SET
+                title_gr_norm   = norm(title_gr),
+                title_orig_norm = norm(title_orig),
+                director_norm   = norm(director)
+            WHERE title_gr_norm IS NULL
+        """)
         conn.commit()
 
 
@@ -76,6 +91,9 @@ def upsert_movie(movie_data):
     for k in explicit_nulls:
         movie_data[k] = None
     movie_data['last_updated'] = datetime.now().isoformat()
+    movie_data['title_gr_norm']   = _normalize(movie_data.get('title_gr'))
+    movie_data['title_orig_norm'] = _normalize(movie_data.get('title_orig'))
+    movie_data['director_norm']   = _normalize(movie_data.get('director'))
 
     with get_db() as conn:
         existing = conn.execute(
@@ -121,7 +139,7 @@ def get_movies(filters=None, page=1, per_page=24, sort_by='year', sort_dir='desc
 
     if filters:
         if filters.get('title'):
-            where_clauses.append("(norm(title_gr) LIKE ? OR norm(title_orig) LIKE ? OR norm(director) LIKE ?)")
+            where_clauses.append("(title_gr_norm LIKE ? OR title_orig_norm LIKE ? OR director_norm LIKE ?)")
             t = f"%{_normalize(filters['title'])}%"
             params.extend([t, t, t])
 
@@ -158,7 +176,7 @@ def get_movies(filters=None, page=1, per_page=24, sort_by='year', sort_dir='desc
             params.append(float(filters['rating_max']))
 
         if filters.get('director'):
-            where_clauses.append("norm(director) LIKE ?")
+            where_clauses.append("director_norm LIKE ?")
             params.append(f"%{_normalize(filters['director'])}%")
 
         if filters.get('duration_min'):
@@ -208,7 +226,7 @@ def get_random_movie(filters=None):
 
     if filters:
         if filters.get('title'):
-            where_clauses.append("(norm(title_gr) LIKE ? OR norm(title_orig) LIKE ? OR norm(director) LIKE ?)")
+            where_clauses.append("(title_gr_norm LIKE ? OR title_orig_norm LIKE ? OR director_norm LIKE ?)")
             t = f"%{_normalize(filters['title'])}%"
             params.extend([t, t, t])
         if filters.get('year_from'):
@@ -238,7 +256,7 @@ def get_random_movie(filters=None):
             where_clauses.append("rating <= ?")
             params.append(float(filters['rating_max']))
         if filters.get('director'):
-            where_clauses.append("norm(director) LIKE ?")
+            where_clauses.append("director_norm LIKE ?")
             params.append(f"%{_normalize(filters['director'])}%")
         if filters.get('duration_min'):
             where_clauses.append("duration >= ?")
