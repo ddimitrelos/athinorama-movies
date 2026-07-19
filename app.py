@@ -188,9 +188,56 @@ def api_stats():
 
 
 # ---------------------------------------------------------------------------
+# Internal ratings sync endpoint (available in all modes)
+# ---------------------------------------------------------------------------
+RATINGS_SYNC_TOKEN = 'athinorama-ratings-sync-2026'
+
+@app.route('/api/internal/update-ratings', methods=['POST'])
+def api_internal_update_ratings():
+    token = request.headers.get('X-Ratings-Token', '')
+    if token != RATINGS_SYNC_TOKEN:
+        return jsonify({'error': 'Unauthorized'}), 401
+    data = request.get_json(silent=True)
+    if not isinstance(data, list):
+        return jsonify({'error': 'Expected a JSON array'}), 400
+    updated = 0
+    for entry in data:
+        slug = entry.get('slug')
+        rating = entry.get('rating')
+        if slug and rating is not None:
+            database.update_rating(slug, rating)
+            updated += 1
+    return jsonify({'updated': updated})
+
+
+# ---------------------------------------------------------------------------
 # Scraper control API (local only — disabled in cloud mode)
 # ---------------------------------------------------------------------------
 if not CLOUD_MODE:
+    @app.route('/api/scrape/ratings', methods=['POST'])
+    def api_scrape_ratings():
+        if scraper.progress['running']:
+            return jsonify({'error': 'Η εξαγωγη δεδομενων βρισκεται ηδη σε εξελιξη.'}), 409
+        threading.Thread(target=scraper.run_ratings_scrape, daemon=True).start()
+        return jsonify({'message': 'Συμπληρωση κενων αξιολογησεων ξεκινησε.'})
+
+    @app.route('/api/scrape/status')
+    def api_scrape_status():
+        status = dict(scraper.progress)
+        try:
+            job = scheduler.get_job('weekly_scrape')
+            if job and job.next_run_time:
+                nrt = job.next_run_time
+                if hasattr(nrt, 'astimezone'):
+                    nrt = nrt.astimezone(tz=None).replace(tzinfo=None)
+                status['next_scheduled'] = nrt.strftime('%d/%m/%Y %H:%M')
+        except Exception as e:
+            logger.warning(f"Could not get next run time: {e}")
+        schedule_data = _load_schedule()
+        if schedule_data.get('last_run'):
+            status['last_auto_scrape'] = schedule_data['last_run']
+        return jsonify(status)
+
     @app.route('/api/scrape/start', methods=['POST'])
     def api_scrape_start():
         if scraper.progress['running']:
@@ -220,31 +267,6 @@ if not CLOUD_MODE:
         scraper.stop_scrape()
         return jsonify({'message': 'Διακοπη.'})
 
-    @app.route('/api/scrape/ratings', methods=['POST'])
-    def api_scrape_ratings():
-        if scraper.progress['running']:
-            return jsonify({'error': 'Η εξαγωγη δεδομενων βρισκεται ηδη σε εξελιξη.'}), 409
-        threading.Thread(target=scraper.run_ratings_scrape, daemon=True).start()
-        return jsonify({'message': 'Ενημερωση αξιολογησεων ξεκινησε.'})
-
-    @app.route('/api/scrape/status')
-    def api_scrape_status():
-        status = dict(scraper.progress)
-        # Attach next scheduled run time
-        try:
-            job = scheduler.get_job('weekly_scrape')
-            if job and job.next_run_time:
-                # next_run_time may be timezone-aware; convert to naive local time
-                nrt = job.next_run_time
-                if hasattr(nrt, 'astimezone'):
-                    nrt = nrt.astimezone(tz=None).replace(tzinfo=None)
-                status['next_scheduled'] = nrt.strftime('%d/%m/%Y %H:%M')
-        except Exception as e:
-            logger.warning(f"Could not get next run time: {e}")
-        schedule_data = _load_schedule()
-        if schedule_data.get('last_run'):
-            status['last_auto_scrape'] = schedule_data['last_run']
-        return jsonify(status)
 
 
 # ---------------------------------------------------------------------------

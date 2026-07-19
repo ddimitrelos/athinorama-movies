@@ -693,21 +693,21 @@ def run_scrape(full_rescrape=False):
 
 
 def run_ratings_scrape():
-    """Re-scrape rating from every detail page using span.rating-value (accurate source)."""
+    """Fill in missing ratings by re-scraping detail pages that have rating IS NULL."""
     global progress
 
     progress.update({
         'running': True, 'paused': False,
         'started_at': datetime.now().isoformat(), 'completed_at': None,
         'error': None, 'new_count': 0, 'updated_count': 0,
-        'phase': 'Ενημέρωση αξιολογήσεων…', 'current': 0, 'total': 0, 'message': '',
+        'phase': 'Συμπλήρωση κενών αξιολογήσεων…', 'current': 0, 'total': 0, 'message': '',
     })
     _pause_event.set()
 
     try:
         with database.get_db() as conn:
             rows = conn.execute(
-                "SELECT slug FROM movies WHERE detail_scraped = 1"
+                "SELECT slug FROM movies WHERE detail_scraped = 1 AND rating IS NULL"
             ).fetchall()
         slugs = [r['slug'] for r in rows]
 
@@ -756,7 +756,7 @@ def run_ratings_scrape():
                     logger.error(f"Worker error for {futures[future]}: {exc}")
 
         progress['phase'] = 'Ολοκληρώθηκε'
-        progress['message'] = f"Ελέγχθηκαν {progress['updated_count']} ταινίες."
+        progress['message'] = f"Συμπληρώθηκαν {progress['updated_count']} αξιολογήσεις."
 
     except Exception as exc:
         logger.exception("Fatal ratings scrape error")

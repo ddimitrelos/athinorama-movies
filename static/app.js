@@ -407,7 +407,7 @@ async function openDetail(slug) {
 // Scraper controls
 // ═══════════════════════════════════════════════════════════════════════════
 
-document.getElementById('btn-start-scrape').addEventListener('click', async () => {
+document.getElementById('btn-start-scrape')?.addEventListener('click', async () => {
   const full = document.getElementById('chk-full-rescrape').checked;
   try {
     await fetch('/api/scrape/start', {
@@ -432,7 +432,7 @@ document.getElementById('btn-update-ratings').addEventListener('click', async ()
   }
 });
 
-document.getElementById('btn-pause-scrape').addEventListener('click', async () => {
+document.getElementById('btn-pause-scrape')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-pause-scrape');
   if (btn.dataset.paused === '1') {
     await fetch('/api/scrape/resume', { method: 'POST' });
@@ -445,7 +445,7 @@ document.getElementById('btn-pause-scrape').addEventListener('click', async () =
   }
 });
 
-document.getElementById('btn-stop-scrape').addEventListener('click', async () => {
+document.getElementById('btn-stop-scrape')?.addEventListener('click', async () => {
   if (!confirm('Να διακοπεί η εξαγωγή;')) return;
   await fetch('/api/scrape/stop', { method: 'POST' });
 });

@@ -502,6 +502,7 @@
       <div class="modal-body">
         <!-- Status when not running -->
         <div id="scrape-idle">
+          {% if not cloud_mode %}
           <p class="mb-1" style="font-size:.88rem">
             Η εξαγωγή θα σαρώσει όλο το αρχείο ταινιών Αθηνόραμα (1916–σήμερα).<br>
             <strong>Η αρχική εξαγωγή μπορεί να διαρκέσει αρκετές ώρες.</strong>
@@ -519,8 +520,9 @@
           <button class="btn btn-danger w-100" id="btn-start-scrape">
             <i class="bi bi-play-fill me-1"></i>Έναρξη Εξαγωγής
           </button>
-          <button class="btn btn-outline-warning w-100 mt-2" id="btn-update-ratings">
-            <i class="bi bi-star-half me-1"></i>Ενημέρωση Αξιολογήσεων
+          {% endif %}
+          <button class="btn btn-outline-warning w-100 {% if not cloud_mode %}mt-2{% endif %}" id="btn-update-ratings">
+            <i class="bi bi-star-half me-1"></i>Συμπλήρωση Κενών Αξιολογήσεων
           </button>
         </div>
 
