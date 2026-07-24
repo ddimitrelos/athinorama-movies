@@ -109,9 +109,10 @@ def commit_and_push(new_count, updated_count):
             git('add', path)
             staged.append(f)
 
-    # Check if there is anything to commit
+    # Check if there is anything staged to commit (ignore untracked files)
     status = git('status', '--porcelain', check=False)
-    if not status.stdout.strip():
+    staged_changes = [l for l in status.stdout.splitlines() if not l.startswith('??')]
+    if not staged_changes:
         logger.info("Nothing to commit — database unchanged.")
         return
 
